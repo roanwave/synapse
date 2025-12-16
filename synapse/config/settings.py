@@ -52,6 +52,7 @@ def get_api_key(provider: str) -> Optional[str]:
         "anthropic": "ANTHROPIC_API_KEY",
         "openai": "OPENAI_API_KEY",
         "openrouter": "OPENROUTER_KEY",
+        "gabai": "GABAI_KEY",
     }
     env_var = key_map.get(provider.lower())
     if env_var:

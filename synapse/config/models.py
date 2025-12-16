@@ -12,7 +12,7 @@ class ModelConfig:
 
     model_id: str
     display_name: str
-    provider: str  # anthropic, openai, openrouter
+    provider: str  # anthropic, openai, openrouter, gabai
     context_window: int
     max_output_tokens: int
 
@@ -106,6 +106,14 @@ MODELS: Dict[str, ModelConfig] = {
         context_window=32768,
         max_output_tokens=4096,
     ),
+    # Gab AI models
+    "arya": ModelConfig(
+        model_id="arya",
+        display_name="Arya",
+        provider="gabai",
+        context_window=128000,
+        max_output_tokens=4096,
+    ),
 }
 
 
@@ -153,7 +161,7 @@ def get_available_providers() -> List[str]:
         List of provider names with valid API keys
     """
     providers = set()
-    for provider in ["anthropic", "openai", "openrouter"]:
+    for provider in ["anthropic", "openai", "openrouter", "gabai"]:
         if get_api_key(provider):
             providers.add(provider)
     return list(providers)

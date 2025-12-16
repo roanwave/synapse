@@ -102,7 +102,7 @@ class ModelSelector(QFrame):
         available = get_available_models()
 
         # Group by provider
-        providers = {"anthropic": [], "openai": [], "openrouter": []}
+        providers = {"anthropic": [], "openai": [], "openrouter": [], "gabai": []}
         for model in available:
             providers[model.provider].append(model)
 
@@ -111,6 +111,7 @@ class ModelSelector(QFrame):
             "anthropic": "Anthropic",
             "openai": "OpenAI",
             "openrouter": "OpenRouter",
+            "gabai": "Gab AI",
         }
 
         for provider_id, models in providers.items():

@@ -30,6 +30,7 @@ from ..llm.base_adapter import LLMAdapter
 from ..llm.anthropic_adapter import AnthropicAdapter
 from ..llm.openai_adapter import OpenAIAdapter
 from ..llm.openrouter_adapter import OpenRouterAdapter
+from ..llm.gabai_adapter import GabAIAdapter
 from ..utils.token_counter import TokenCounter
 
 
@@ -151,7 +152,7 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("No API keys configured")
             self.chat_panel.add_error_message(
                 "No API keys configured. Please set ANTHROPIC_API_KEY, "
-                "OPENAI_API_KEY, or OPENROUTER_KEY environment variable."
+                "OPENAI_API_KEY, OPENROUTER_KEY, or GABAI_KEY environment variable."
             )
             self.input_panel.set_enabled(False)
             return
@@ -186,6 +187,8 @@ class MainWindow(QMainWindow):
                 self._adapter = OpenAIAdapter(model_id)
             elif model_config.provider == "openrouter":
                 self._adapter = OpenRouterAdapter(model_id)
+            elif model_config.provider == "gabai":
+                self._adapter = GabAIAdapter(model_id)
             else:
                 raise ValueError(f"Unknown provider: {model_config.provider}")
 
