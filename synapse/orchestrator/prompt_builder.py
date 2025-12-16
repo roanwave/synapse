@@ -2,9 +2,16 @@
 
 This module assembles the final prompt from various components.
 It does NOT call LLMs or trigger summarization - it only builds prompts.
+
+Prompt assembly order:
+1. SYSTEM PROMPT
+2. SUMMARY BLOCK (if context was compressed)
+3. INTENT SIGNAL (low-priority mode hint)
+4. CONVERSATION HISTORY (only non-summarized messages)
+5. CURRENT USER MESSAGE
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 
 
@@ -14,6 +21,8 @@ class Message:
 
     role: str  # "user" or "assistant"
     content: str
+    index: int = 0  # Position in full history
+    is_summarized: bool = False  # Whether this message has been summarized
 
     def to_dict(self) -> Dict[str, str]:
         """Convert to API-compatible dict format."""
@@ -25,22 +34,95 @@ class ConversationHistory:
     """Maintains the conversation history for a session."""
 
     messages: List[Message] = field(default_factory=list)
+    _next_index: int = 0
 
-    def add_user_message(self, content: str) -> None:
+    def add_user_message(self, content: str) -> Message:
         """Add a user message to the history."""
-        self.messages.append(Message(role="user", content=content))
+        msg = Message(role="user", content=content, index=self._next_index)
+        self.messages.append(msg)
+        self._next_index += 1
+        return msg
 
-    def add_assistant_message(self, content: str) -> None:
+    def add_assistant_message(self, content: str) -> Message:
         """Add an assistant message to the history."""
-        self.messages.append(Message(role="assistant", content=content))
+        msg = Message(role="assistant", content=content, index=self._next_index)
+        self.messages.append(msg)
+        self._next_index += 1
+        return msg
 
-    def to_api_format(self) -> List[Dict[str, str]]:
-        """Convert all messages to API-compatible format."""
-        return [msg.to_dict() for msg in self.messages]
+    def to_api_format(self, include_summarized: bool = False) -> List[Dict[str, str]]:
+        """Convert messages to API-compatible format.
+
+        Args:
+            include_summarized: Whether to include summarized messages
+
+        Returns:
+            List of message dicts
+        """
+        if include_summarized:
+            return [msg.to_dict() for msg in self.messages]
+        return [msg.to_dict() for msg in self.messages if not msg.is_summarized]
+
+    def get_active_messages(self) -> List[Message]:
+        """Get only non-summarized messages."""
+        return [msg for msg in self.messages if not msg.is_summarized]
+
+    def get_summarized_messages(self) -> List[Message]:
+        """Get only summarized messages."""
+        return [msg for msg in self.messages if msg.is_summarized]
+
+    def mark_summarized(self, up_to_index: int) -> int:
+        """Mark messages up to index as summarized.
+
+        Args:
+            up_to_index: Mark messages with index <= this as summarized
+
+        Returns:
+            Number of messages marked
+        """
+        count = 0
+        for msg in self.messages:
+            if msg.index <= up_to_index and not msg.is_summarized:
+                msg.is_summarized = True
+                count += 1
+        return count
+
+    def remove_last_exchange(self) -> Optional[tuple]:
+        """Remove the last user-assistant exchange.
+
+        Returns:
+            Tuple of (user_message, assistant_message) if removed, None otherwise
+        """
+        if len(self.messages) < 2:
+            return None
+
+        # Check if last two are user-assistant pair
+        if (self.messages[-2].role == "user" and
+                self.messages[-1].role == "assistant"):
+            assistant = self.messages.pop()
+            user = self.messages.pop()
+            return (user, assistant)
+
+        # Just remove last assistant message if present
+        if self.messages[-1].role == "assistant":
+            assistant = self.messages.pop()
+            if self.messages and self.messages[-1].role == "user":
+                user = self.messages[-1]
+                return (user, assistant)
+
+        return None
+
+    def get_last_user_message(self) -> Optional[Message]:
+        """Get the most recent user message."""
+        for msg in reversed(self.messages):
+            if msg.role == "user":
+                return msg
+        return None
 
     def clear(self) -> None:
         """Clear all messages from history."""
         self.messages.clear()
+        self._next_index = 0
 
     def __len__(self) -> int:
         """Return number of messages."""
@@ -51,67 +133,227 @@ class PromptBuilder:
     """Builds prompts for LLM calls.
 
     This class is responsible for assembling the final prompt from:
-    - System prompt
-    - Summary block (if context was compressed) - Phase 2+
-    - RAG context (with confidence scores) - Phase 2+
-    - Intent signal (low-priority mode hint) - Phase 2+
-    - Conversation history
-    - Current user message
+    1. System prompt (base)
+    2. Summary block (if context was compressed)
+    3. Intent signal (low-priority mode hint)
+    4. Conversation history (only non-summarized messages)
+    5. Current user message
 
-    For Phase 1, we only use system prompt and conversation history.
+    Does NOT:
+    - Call LLMs
+    - Trigger summarization
+    - Decide when to summarize
     """
 
     DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
 
-    def __init__(self, system_prompt: str | None = None) -> None:
+    def __init__(self, system_prompt: Optional[str] = None) -> None:
         """Initialize the prompt builder.
 
         Args:
             system_prompt: Custom system prompt, or None for default
         """
-        self.system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
+        self._base_system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
         self.history = ConversationHistory()
+        self._summary_block: Optional[str] = None
+        self._intent_hint: Optional[str] = None
+
+    def set_summary(self, xml_summary: str) -> None:
+        """Set the summary block to inject into prompts.
+
+        Args:
+            xml_summary: The XML summary content
+        """
+        if xml_summary:
+            self._summary_block = (
+                "PREVIOUS CONTEXT HAS BEEN SUMMARIZED AS FOLLOWS:\n\n"
+                f"{xml_summary}\n\n"
+                "CONTINUE THE CONVERSATION SEAMLESSLY."
+            )
+        else:
+            self._summary_block = None
+
+    def clear_summary(self) -> None:
+        """Clear the summary block."""
+        self._summary_block = None
+
+    def set_intent_hint(self, hint: str) -> None:
+        """Set the intent hint to inject into prompts.
+
+        Args:
+            hint: The intent hint string
+        """
+        self._intent_hint = hint
 
     def build_messages(self) -> List[Dict[str, str]]:
         """Build the messages list for an API call.
 
+        Returns only non-summarized messages.
+
         Returns:
             List of message dicts ready for the LLM API
         """
-        return self.history.to_api_format()
+        return self.history.to_api_format(include_summarized=False)
 
-    def get_system_prompt(self) -> str:
-        """Get the current system prompt.
+    def build_all_messages(self) -> List[Dict[str, str]]:
+        """Build all messages including summarized ones.
+
+        Useful for token counting the full history.
 
         Returns:
-            The system prompt string
+            List of all message dicts
         """
-        return self.system_prompt
+        return self.history.to_api_format(include_summarized=True)
 
-    def add_user_message(self, content: str) -> None:
+    def get_system_prompt(self) -> str:
+        """Build the complete system prompt with injections.
+
+        Assembles:
+        1. Base system prompt
+        2. Summary block (if present)
+        3. Intent hint (if present)
+
+        Returns:
+            The complete system prompt string
+        """
+        parts = [self._base_system_prompt]
+
+        if self._summary_block:
+            parts.append("")
+            parts.append(self._summary_block)
+
+        if self._intent_hint:
+            parts.append("")
+            parts.append(self._intent_hint)
+
+        return "\n".join(parts)
+
+    def add_user_message(self, content: str) -> Message:
         """Add a user message to the conversation.
 
         Args:
             content: The user's message text
-        """
-        self.history.add_user_message(content)
 
-    def add_assistant_message(self, content: str) -> None:
+        Returns:
+            The created Message
+        """
+        return self.history.add_user_message(content)
+
+    def add_assistant_message(self, content: str) -> Message:
         """Add an assistant response to the conversation.
 
         Args:
             content: The assistant's response text
+
+        Returns:
+            The created Message
         """
-        self.history.add_assistant_message(content)
+        return self.history.add_assistant_message(content)
 
     def get_message_count(self) -> int:
-        """Get the number of messages in the conversation.
+        """Get the total number of messages in the conversation.
 
         Returns:
             Number of messages
         """
         return len(self.history)
 
+    def get_active_message_count(self) -> int:
+        """Get the number of non-summarized messages.
+
+        Returns:
+            Number of active messages
+        """
+        return len(self.history.get_active_messages())
+
+    def mark_messages_summarized(self, up_to_index: int) -> int:
+        """Mark messages as summarized after summarization.
+
+        Args:
+            up_to_index: Mark messages up to this index as summarized
+
+        Returns:
+            Number of messages marked
+        """
+        return self.history.mark_summarized(up_to_index)
+
+    def get_messages_for_summarization(
+        self,
+        boundary_index: Optional[int] = None
+    ) -> List[Dict[str, str]]:
+        """Get messages that should be summarized.
+
+        Args:
+            boundary_index: Optional waypoint boundary
+
+        Returns:
+            List of message dicts to summarize
+        """
+        active = self.history.get_active_messages()
+
+        if boundary_index is not None:
+            # Only return messages up to the boundary
+            return [
+                msg.to_dict() for msg in active
+                if msg.index <= boundary_index
+            ]
+
+        # Default: return all but the last 4 active messages
+        if len(active) <= 4:
+            return []
+
+        return [msg.to_dict() for msg in active[:-4]]
+
+    def get_highest_summarizable_index(
+        self,
+        boundary_index: Optional[int] = None
+    ) -> int:
+        """Get the highest message index that would be summarized.
+
+        Args:
+            boundary_index: Optional waypoint boundary
+
+        Returns:
+            The highest index, or -1 if none
+        """
+        active = self.history.get_active_messages()
+
+        if boundary_index is not None:
+            for msg in reversed(active):
+                if msg.index <= boundary_index:
+                    return msg.index
+            return -1
+
+        if len(active) <= 4:
+            return -1
+
+        return active[-5].index
+
+    def remove_last_assistant_message(self) -> Optional[str]:
+        """Remove the last assistant message for regeneration.
+
+        Returns:
+            The removed message content, or None
+        """
+        result = self.history.remove_last_exchange()
+        if result:
+            user_msg, assistant_msg = result
+            # Re-add the user message (we only wanted to remove assistant)
+            self.history.messages.append(user_msg)
+            return assistant_msg.content
+        return None
+
+    def get_last_user_message(self) -> Optional[str]:
+        """Get the most recent user message content.
+
+        Returns:
+            The message content, or None
+        """
+        msg = self.history.get_last_user_message()
+        return msg.content if msg else None
+
     def clear_history(self) -> None:
-        """Clear the conversation history."""
+        """Clear the conversation history and summary."""
         self.history.clear()
+        self._summary_block = None
+        self._intent_hint = None

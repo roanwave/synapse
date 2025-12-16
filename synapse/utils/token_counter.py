@@ -9,10 +9,10 @@ class TokenCounter:
     """Counts tokens for different model providers.
 
     Uses tiktoken for OpenAI models and a character-based approximation
-    for Claude models (since anthropic doesn't expose a public tokenizer).
+    for Claude and other models (since they don't expose public tokenizers).
     """
 
-    def __init__(self, model_id: str = "claude-sonnet-4-20250514") -> None:
+    def __init__(self, model_id: str = "claude-sonnet-4-5-20250514") -> None:
         """Initialize the token counter.
 
         Args:
@@ -24,9 +24,17 @@ class TokenCounter:
         # Determine provider from model ID
         if model_id.startswith("claude"):
             self.provider = "anthropic"
-        elif model_id.startswith("gpt"):
+        elif model_id.startswith("gpt") or model_id.startswith("o1") or model_id.startswith("o3"):
             self.provider = "openai"
-            self._tiktoken_encoder = tiktoken.encoding_for_model(model_id)
+            # Try to get encoder, fall back to cl100k_base for newer models
+            try:
+                self._tiktoken_encoder = tiktoken.encoding_for_model(model_id)
+            except KeyError:
+                # Use cl100k_base as fallback for GPT-4 class models
+                self._tiktoken_encoder = tiktoken.get_encoding("cl100k_base")
+        elif "/" in model_id:
+            # OpenRouter models have format provider/model
+            self.provider = "openrouter"
         else:
             self.provider = "unknown"
 
@@ -45,8 +53,8 @@ class TokenCounter:
         if self.provider == "openai" and self._tiktoken_encoder:
             return len(self._tiktoken_encoder.encode(text))
 
-        # For Claude models, use character-based approximation
-        # Claude tokenizer averages ~4 characters per token for English
+        # For Claude and other models, use character-based approximation
+        # Most tokenizers average ~4 characters per token for English
         return len(text) // 4
 
     def count_messages(self, messages: List[Dict[str, Any]]) -> int:
