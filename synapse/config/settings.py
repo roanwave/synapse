@@ -27,7 +27,7 @@ class AppSettings:
     window_title: str = "Synapse"
 
     # Default model
-    default_model: str = "claude-sonnet-4-5-20250514"
+    default_model: str = "claude-sonnet-4-5-20250929"
 
     # Paths
     app_data_dir: Path = Path.home() / ".synapse"

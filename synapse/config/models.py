@@ -20,15 +20,15 @@ class ModelConfig:
 # All supported models
 MODELS: Dict[str, ModelConfig] = {
     # Anthropic models
-    "claude-opus-4-5-20250514": ModelConfig(
-        model_id="claude-opus-4-5-20250514",
+    "claude-opus-4-5-20251101": ModelConfig(
+        model_id="claude-opus-4-5-20251101",
         display_name="Claude Opus 4.5",
         provider="anthropic",
         context_window=200000,
         max_output_tokens=32768,
     ),
-    "claude-sonnet-4-5-20250514": ModelConfig(
-        model_id="claude-sonnet-4-5-20250514",
+    "claude-sonnet-4-5-20250929": ModelConfig(
+        model_id="claude-sonnet-4-5-20250929",
         display_name="Claude Sonnet 4.5",
         provider="anthropic",
         context_window=200000,
