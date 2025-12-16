@@ -309,7 +309,7 @@ class DocumentPanel(QFrame):
         self.doc_list.setMaximumHeight(120)
         self.doc_list.setStyleSheet(f"""
             QListWidget {{
-                background-color: {theme.background_primary};
+                background-color: {theme.background};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
                 border-radius: 4px;

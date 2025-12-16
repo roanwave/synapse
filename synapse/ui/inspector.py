@@ -105,7 +105,7 @@ class InspectorPanel(QWidget):
         self.prompt_view.setReadOnly(True)
         self.prompt_view.setStyleSheet(f"""
             QTextEdit {{
-                background-color: {theme.background_primary};
+                background-color: {theme.background};
                 color: {theme.text_primary};
                 border: none;
                 font-family: 'Consolas', 'Monaco', monospace;
@@ -119,7 +119,7 @@ class InspectorPanel(QWidget):
         self.rag_view.setReadOnly(True)
         self.rag_view.setStyleSheet(f"""
             QTextEdit {{
-                background-color: {theme.background_primary};
+                background-color: {theme.background};
                 color: {theme.text_primary};
                 border: none;
                 font-family: 'Consolas', 'Monaco', monospace;
@@ -133,7 +133,7 @@ class InspectorPanel(QWidget):
         self.metadata_tree.setHeaderLabels(["Property", "Value"])
         self.metadata_tree.setStyleSheet(f"""
             QTreeWidget {{
-                background-color: {theme.background_primary};
+                background-color: {theme.background};
                 color: {theme.text_primary};
                 border: none;
                 font-size: 12px;
