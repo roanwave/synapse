@@ -4,3 +4,9 @@ openai>=1.12.0
 tiktoken>=0.5.0
 python-dotenv>=1.0.0
 qasync>=0.27.0
+# RAG dependencies
+faiss-cpu>=1.7.4
+rank-bm25>=0.2.2
+pypdf>=3.17.0
+python-docx>=1.1.0
+numpy>=1.24.0

@@ -1,7 +1,8 @@
 """Main application window."""
 
 import asyncio
-from typing import Optional
+from typing import Optional, List, Dict, Any
+from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -17,6 +18,7 @@ from PySide6.QtGui import QShortcut, QKeySequence
 from .chat_panel import ChatPanel
 from .input_panel import InputPanel
 from .sidebar import Sidebar
+from .inspector import InspectorPanel
 from ..config.settings import settings
 from ..config.models import MODELS, get_model, get_available_models
 from ..config.themes import get_stylesheet, theme
@@ -32,6 +34,10 @@ from ..llm.openai_adapter import OpenAIAdapter
 from ..llm.openrouter_adapter import OpenRouterAdapter
 from ..llm.gabai_adapter import GabAIAdapter
 from ..utils.token_counter import TokenCounter
+from ..storage.vector_store_client import FAISSVectorStore
+from ..storage.bm25_client import BM25Client, reciprocal_rank_fusion
+from ..storage.document_indexer import DocumentIndexer
+from ..storage.retrieval_blacklist import RetrievalBlacklist
 
 
 class MainWindow(QMainWindow):
@@ -51,6 +57,16 @@ class MainWindow(QMainWindow):
         self._drift_detector = DriftDetector()
         self._is_streaming = False
         self._summarization_in_progress = False
+
+        # RAG components (initialized lazily when first document added)
+        self._vector_store: Optional[FAISSVectorStore] = None
+        self._bm25_client: Optional[BM25Client] = None
+        self._document_indexer: Optional[DocumentIndexer] = None
+        self._retrieval_blacklist: Optional[RetrievalBlacklist] = None
+        self._rag_initialized = False
+
+        # Inspector panel
+        self._inspector_panel: Optional[InspectorPanel] = None
 
         self._setup_ui()
         self._setup_shortcuts()
@@ -79,6 +95,9 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar()
         self.sidebar.model_changed.connect(self._on_model_changed)
         self.sidebar.regenerate_requested.connect(self._on_regenerate_requested)
+        self.sidebar.document_added.connect(self._on_document_added)
+        self.sidebar.document_removed.connect(self._on_document_removed)
+        self.sidebar.inspector_toggled.connect(self._on_inspector_toggled)
         main_layout.addWidget(self.sidebar)
 
         # Chat area
@@ -103,6 +122,12 @@ class MainWindow(QMainWindow):
         chat_layout.addWidget(self.input_panel)
 
         main_layout.addWidget(chat_container, stretch=1)
+
+        # Inspector panel (hidden by default)
+        self._inspector_panel = InspectorPanel()
+        self._inspector_panel.closed.connect(self._on_inspector_closed)
+        self._inspector_panel.hide()
+        main_layout.addWidget(self._inspector_panel)
 
         # Status bar
         self.status_bar = QStatusBar()
@@ -269,8 +294,31 @@ class MainWindow(QMainWindow):
         self.sidebar.set_regenerate_enabled(False)
         self.chat_panel.start_assistant_message()
 
-        # Run the async stream in the event loop
-        asyncio.ensure_future(self._stream_response())
+        # Run the async stream with RAG in the event loop
+        asyncio.ensure_future(self._stream_response_with_rag(message))
+
+    async def _stream_response_with_rag(self, user_message: str) -> None:
+        """Stream a response with RAG retrieval.
+
+        Args:
+            user_message: The user's message for RAG query
+        """
+        # Perform RAG retrieval if documents are indexed
+        if self._rag_initialized and self._vector_store:
+            doc_count = len(self._vector_store.get_all_doc_ids())
+            if doc_count > 0:
+                chunks = await self._perform_rag_retrieval(user_message)
+                self._prompt_builder.set_rag_context(chunks, user_message)
+            else:
+                self._prompt_builder.clear_rag_context()
+        else:
+            self._prompt_builder.clear_rag_context()
+
+        # Update inspector
+        self._update_inspector()
+
+        # Stream the response
+        await self._stream_response()
 
     async def _stream_response(self) -> None:
         """Stream a response from the LLM."""
@@ -460,3 +508,232 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         # Ensure input has focus when window is shown
         QTimer.singleShot(0, self.input_panel.focus_input)
+
+    def _init_rag(self) -> bool:
+        """Initialize RAG components lazily.
+
+        Returns:
+            True if initialization successful
+        """
+        if self._rag_initialized:
+            return True
+
+        try:
+            # Initialize vector store
+            index_path = settings.app_data_dir / "index"
+            self._vector_store = FAISSVectorStore(
+                dimension=1536,  # text-embedding-3-small
+                index_path=index_path,
+            )
+
+            # Initialize BM25 client
+            self._bm25_client = BM25Client()
+
+            # Initialize document indexer
+            self._document_indexer = DocumentIndexer(
+                vector_store=self._vector_store,
+                bm25_client=self._bm25_client,
+            )
+
+            # Initialize retrieval blacklist
+            blacklist_path = settings.app_data_dir / "blacklist.json"
+            self._retrieval_blacklist = RetrievalBlacklist(blacklist_path)
+
+            self._rag_initialized = True
+            return True
+
+        except Exception as e:
+            self.status_bar.showMessage(f"RAG init failed: {e}", 5000)
+            return False
+
+    def _on_document_added(self, file_path: str) -> None:
+        """Handle document added signal.
+
+        Args:
+            file_path: Path to the document file
+        """
+        if not self._init_rag():
+            return
+
+        # Index document asynchronously
+        asyncio.ensure_future(self._index_document(file_path))
+
+    async def _index_document(self, file_path: str) -> None:
+        """Index a document for RAG.
+
+        Args:
+            file_path: Path to the document file
+        """
+        if not self._document_indexer:
+            return
+
+        try:
+            self.status_bar.showMessage(f"Indexing {Path(file_path).name}...")
+
+            parent = await self._document_indexer.index_document(Path(file_path))
+
+            # Add to sidebar
+            self.sidebar.add_document(
+                doc_id=parent.doc_id,
+                name=parent.title,
+                path=file_path
+            )
+
+            self.status_bar.showMessage(
+                f"Indexed {parent.title} ({len(parent.chunk_ids)} chunks)", 3000
+            )
+
+        except Exception as e:
+            self.chat_panel.add_error_message(f"Failed to index document: {e}")
+            self.status_bar.showMessage(f"Index failed: {e}", 5000)
+
+    def _on_document_removed(self, doc_id: str) -> None:
+        """Handle document removed signal.
+
+        Args:
+            doc_id: Document ID to remove
+        """
+        if self._document_indexer:
+            self._document_indexer.delete_document(doc_id)
+            self.status_bar.showMessage("Document removed", 2000)
+
+    def _on_inspector_toggled(self, visible: bool) -> None:
+        """Handle inspector toggle.
+
+        Args:
+            visible: Whether inspector should be visible
+        """
+        if self._inspector_panel:
+            if visible:
+                self._inspector_panel.show()
+                self._update_inspector()
+            else:
+                self._inspector_panel.hide()
+
+    def _on_inspector_closed(self) -> None:
+        """Handle inspector close button."""
+        if self._inspector_panel:
+            self._inspector_panel.hide()
+            self.sidebar.set_inspector_active(False)
+
+    async def _perform_rag_retrieval(self, query: str) -> List[Dict[str, Any]]:
+        """Perform hybrid RAG retrieval for a query.
+
+        Args:
+            query: The user's query
+
+        Returns:
+            List of retrieved chunks with metadata
+        """
+        if not self._rag_initialized or not self._document_indexer:
+            return []
+
+        if not self._vector_store or not self._bm25_client:
+            return []
+
+        try:
+            # Get query embedding
+            query_embedding = await self._document_indexer.get_query_embedding(query)
+
+            # Vector search
+            vector_results = self._vector_store.query(query_embedding, k=10)
+
+            # BM25 search
+            bm25_results = self._bm25_client.query(query, k=10)
+
+            # Reciprocal rank fusion
+            chunks_dict = {c.chunk.chunk_id: c.chunk for c in vector_results}
+            for r in bm25_results:
+                chunk = self._bm25_client.get_chunk(r.chunk_id)
+                if chunk:
+                    chunks_dict[r.chunk_id] = chunk
+
+            fused = reciprocal_rank_fusion(
+                vector_results, bm25_results, chunks_dict, k=60
+            )
+
+            # Apply blacklist filter
+            results = []
+            for chunk_id, score in fused[:5]:  # Top 5
+                # Find the vector result for this chunk
+                vector_result = next(
+                    (r for r in vector_results if r.chunk.chunk_id == chunk_id),
+                    None
+                )
+
+                if vector_result:
+                    # Check blacklist
+                    filtered = self._retrieval_blacklist.filter_results([vector_result])
+                    if filtered:
+                        result = filtered[0]
+                        results.append({
+                            "chunk_id": result.chunk.chunk_id,
+                            "content": result.chunk.content,
+                            "source_file": result.chunk.source_file,
+                            "page_or_section": result.chunk.page_or_section,
+                            "similarity_score": result.similarity_score,
+                            "combined_score": score,
+                        })
+                else:
+                    # Chunk only from BM25, get it directly
+                    chunk = self._bm25_client.get_chunk(chunk_id)
+                    if chunk:
+                        results.append({
+                            "chunk_id": chunk.chunk_id,
+                            "content": chunk.content,
+                            "source_file": chunk.source_file,
+                            "page_or_section": chunk.page_or_section,
+                            "similarity_score": 0.0,
+                            "combined_score": score,
+                        })
+
+            return results
+
+        except Exception as e:
+            self.status_bar.showMessage(f"Retrieval error: {e}", 3000)
+            return []
+
+    def _update_inspector(self) -> None:
+        """Update the inspector panel with current state."""
+        if not self._inspector_panel or not self._inspector_panel.isVisible():
+            return
+
+        # Update prompt view
+        system = self._prompt_builder.get_system_prompt()
+        messages = self._prompt_builder.build_messages()
+        prompt_text = f"=== SYSTEM PROMPT ===\n{system}\n\n"
+        prompt_text += "=== MESSAGES ===\n"
+        for msg in messages:
+            prompt_text += f"[{msg['role'].upper()}]\n{msg['content']}\n\n"
+        self._inspector_panel.update_prompt(prompt_text)
+
+        # Update RAG context
+        rag_chunks = self._prompt_builder.get_rag_chunks()
+        self._inspector_panel.update_rag_context(rag_chunks)
+
+        # Update metadata
+        model_config = get_model(self._current_model_id)
+        metadata = {
+            "model": {
+                "id": self._current_model_id,
+                "provider": model_config.provider if model_config else "unknown",
+                "context_window": model_config.context_window if model_config else 0,
+            },
+            "intent": {
+                "mode": self._intent_tracker.current_mode.value,
+            },
+            "context": {
+                "message_count": self._prompt_builder.get_message_count(),
+                "active_messages": self._prompt_builder.get_active_message_count(),
+                "rag_chunks": len(rag_chunks),
+            },
+        }
+        self._inspector_panel.update_metadata(metadata)
+
+        # Update token summary
+        if self._token_counter and self._context_manager:
+            total = self._token_counter.count_prompt(system, messages)
+            self._inspector_panel.update_token_summary(
+                total=total,
+                context_window=self._context_manager.context_window,
+            )

@@ -6,9 +6,10 @@ It does NOT call LLMs or trigger summarization - it only builds prompts.
 Prompt assembly order:
 1. SYSTEM PROMPT
 2. SUMMARY BLOCK (if context was compressed)
-3. INTENT SIGNAL (low-priority mode hint)
-4. CONVERSATION HISTORY (only non-summarized messages)
-5. CURRENT USER MESSAGE
+3. RAG CONTEXT (with confidence scores, invisible to user)
+4. INTENT SIGNAL (low-priority mode hint)
+5. CONVERSATION HISTORY (only non-summarized messages)
+6. CURRENT USER MESSAGE
 """
 
 from typing import List, Dict, Any, Optional
@@ -156,6 +157,8 @@ class PromptBuilder:
         self._base_system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
         self.history = ConversationHistory()
         self._summary_block: Optional[str] = None
+        self._rag_context: Optional[str] = None
+        self._rag_chunks: List[Dict[str, Any]] = []  # For inspector
         self._intent_hint: Optional[str] = None
 
     def set_summary(self, xml_summary: str) -> None:
@@ -185,6 +188,63 @@ class PromptBuilder:
         """
         self._intent_hint = hint
 
+    def set_rag_context(
+        self,
+        chunks: List[Dict[str, Any]],
+        query: str = "",
+    ) -> None:
+        """Set RAG context to inject into prompts.
+
+        The context includes confidence scores and metadata visible only
+        to the LLM in the system prompt, not to the user.
+
+        Args:
+            chunks: List of chunk dicts with content and metadata
+            query: The query used for retrieval
+        """
+        if not chunks:
+            self._rag_context = None
+            self._rag_chunks = []
+            return
+
+        self._rag_chunks = chunks
+
+        # Build RAG context block
+        lines = [
+            "RELEVANT CONTEXT FROM ATTACHED DOCUMENTS:",
+            "(Use this information to inform your response. "
+            "Cite sources when directly referencing content.)",
+            ""
+        ]
+
+        for i, chunk in enumerate(chunks):
+            source = chunk.get("source_file", "unknown")
+            section = chunk.get("page_or_section", "")
+            score = chunk.get("similarity_score", 0)
+            content = chunk.get("content", "")
+
+            lines.append(f"[Source {i + 1}: {source}")
+            if section:
+                lines.append(f" Section: {section}")
+            lines.append(f" Relevance: {score:.2f}]")
+            lines.append(content)
+            lines.append("")
+
+        self._rag_context = "\n".join(lines)
+
+    def clear_rag_context(self) -> None:
+        """Clear the RAG context."""
+        self._rag_context = None
+        self._rag_chunks = []
+
+    def get_rag_chunks(self) -> List[Dict[str, Any]]:
+        """Get the current RAG chunks for inspection.
+
+        Returns:
+            List of chunk dicts with content and metadata
+        """
+        return self._rag_chunks.copy()
+
     def build_messages(self) -> List[Dict[str, str]]:
         """Build the messages list for an API call.
 
@@ -211,7 +271,8 @@ class PromptBuilder:
         Assembles:
         1. Base system prompt
         2. Summary block (if present)
-        3. Intent hint (if present)
+        3. RAG context (if present)
+        4. Intent hint (if present)
 
         Returns:
             The complete system prompt string
@@ -221,6 +282,10 @@ class PromptBuilder:
         if self._summary_block:
             parts.append("")
             parts.append(self._summary_block)
+
+        if self._rag_context:
+            parts.append("")
+            parts.append(self._rag_context)
 
         if self._intent_hint:
             parts.append("")
@@ -353,7 +418,9 @@ class PromptBuilder:
         return msg.content if msg else None
 
     def clear_history(self) -> None:
-        """Clear the conversation history and summary."""
+        """Clear the conversation history, summary, and RAG context."""
         self.history.clear()
         self._summary_block = None
+        self._rag_context = None
+        self._rag_chunks = []
         self._intent_hint = None

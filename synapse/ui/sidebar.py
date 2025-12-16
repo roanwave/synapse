@@ -1,5 +1,8 @@
 """Sidebar panel with model selector and settings."""
 
+from typing import List
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -9,6 +12,10 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QFrame,
+    QListWidget,
+    QListWidgetItem,
+    QFileDialog,
+    QMenu,
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -264,11 +271,176 @@ class ContextBudgetIndicator(QFrame):
         """)
 
 
+class DocumentPanel(QFrame):
+    """Document attachment panel for RAG."""
+
+    document_added = Signal(str)  # Emits file path
+    document_removed = Signal(str)  # Emits doc_id
+
+    def __init__(self, parent: QWidget | None = None):
+        """Initialize the document panel.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self._documents: List[dict] = []  # {doc_id, name, path}
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """Set up the document panel UI."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+
+        # Label
+        label = QLabel("Documents")
+        label.setStyleSheet(f"""
+            color: {theme.text_secondary};
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            background: transparent;
+        """)
+        layout.addWidget(label)
+
+        # Document list
+        self.doc_list = QListWidget()
+        self.doc_list.setMaximumHeight(120)
+        self.doc_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {theme.background_primary};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: 4px;
+                font-size: 11px;
+            }}
+            QListWidget::item {{
+                padding: 4px;
+            }}
+            QListWidget::item:selected {{
+                background-color: {theme.accent};
+            }}
+        """)
+        self.doc_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.doc_list.customContextMenuRequested.connect(self._show_context_menu)
+        layout.addWidget(self.doc_list)
+
+        # Add button
+        self.add_button = QPushButton("+ Add Document")
+        self.add_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {theme.background_tertiary};
+                color: {theme.text_secondary};
+                border: 1px dashed {theme.border};
+                border-radius: 4px;
+                padding: 6px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.background_secondary};
+                color: {theme.text_primary};
+                border-color: {theme.accent};
+            }}
+        """)
+        self.add_button.clicked.connect(self._on_add_clicked)
+        layout.addWidget(self.add_button)
+
+        # Style the frame
+        self.setStyleSheet(f"""
+            DocumentPanel {{
+                background-color: {theme.background_secondary};
+                border-radius: 8px;
+            }}
+        """)
+
+    def _on_add_clicked(self) -> None:
+        """Handle add document button click."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Document",
+            "",
+            "Documents (*.pdf *.txt *.md *.docx);;All Files (*.*)"
+        )
+        if file_path:
+            self.document_added.emit(file_path)
+
+    def _show_context_menu(self, pos) -> None:
+        """Show context menu for document list."""
+        item = self.doc_list.itemAt(pos)
+        if not item:
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {theme.background_secondary};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+            }}
+            QMenu::item:selected {{
+                background-color: {theme.accent};
+            }}
+        """)
+
+        remove_action = menu.addAction("Remove")
+        action = menu.exec_(self.doc_list.mapToGlobal(pos))
+
+        if action == remove_action:
+            doc_id = item.data(Qt.ItemDataRole.UserRole)
+            if doc_id:
+                self.document_removed.emit(doc_id)
+                self._remove_document(doc_id)
+
+    def add_document(self, doc_id: str, name: str, path: str) -> None:
+        """Add a document to the list.
+
+        Args:
+            doc_id: Document ID
+            name: Display name
+            path: File path
+        """
+        self._documents.append({
+            "doc_id": doc_id,
+            "name": name,
+            "path": path
+        })
+
+        item = QListWidgetItem(name)
+        item.setData(Qt.ItemDataRole.UserRole, doc_id)
+        item.setToolTip(path)
+        self.doc_list.addItem(item)
+
+    def _remove_document(self, doc_id: str) -> None:
+        """Remove a document from the list.
+
+        Args:
+            doc_id: Document ID to remove
+        """
+        for i, doc in enumerate(self._documents):
+            if doc["doc_id"] == doc_id:
+                self._documents.pop(i)
+                self.doc_list.takeItem(i)
+                break
+
+    def get_document_count(self) -> int:
+        """Get the number of attached documents."""
+        return len(self._documents)
+
+    def clear(self) -> None:
+        """Clear all documents."""
+        self._documents.clear()
+        self.doc_list.clear()
+
+
 class Sidebar(QWidget):
-    """Sidebar panel with model selector and context indicator."""
+    """Sidebar panel with model selector, context indicator, and document panel."""
 
     model_changed = Signal(str)  # Emits model_id
     regenerate_requested = Signal()
+    document_added = Signal(str)  # Emits file path
+    document_removed = Signal(str)  # Emits doc_id
+    inspector_toggled = Signal(bool)  # Emits visibility state
 
     def __init__(self, parent: QWidget | None = None):
         """Initialize the sidebar.
@@ -293,6 +465,12 @@ class Sidebar(QWidget):
         # Context budget indicator
         self.context_indicator = ContextBudgetIndicator()
         layout.addWidget(self.context_indicator)
+
+        # Document panel
+        self.document_panel = DocumentPanel()
+        self.document_panel.document_added.connect(self.document_added)
+        self.document_panel.document_removed.connect(self.document_removed)
+        layout.addWidget(self.document_panel)
 
         # Regenerate button
         self.regenerate_button = QPushButton("Regenerate (Ctrl+R)")
@@ -319,6 +497,13 @@ class Sidebar(QWidget):
         self.regenerate_button.clicked.connect(self.regenerate_requested)
         layout.addWidget(self.regenerate_button)
 
+        # Inspector toggle button
+        self.inspector_button = QPushButton("Inspector")
+        self._inspector_active = False
+        self._update_inspector_button_style()
+        self.inspector_button.clicked.connect(self._on_inspector_toggle)
+        layout.addWidget(self.inspector_button)
+
         # Push remaining space to bottom
         layout.addStretch()
 
@@ -332,6 +517,44 @@ class Sidebar(QWidget):
                 border-right: 1px solid {theme.border};
             }}
         """)
+
+    def _on_inspector_toggle(self) -> None:
+        """Handle inspector toggle button click."""
+        self._inspector_active = not self._inspector_active
+        self._update_inspector_button_style()
+        self.inspector_toggled.emit(self._inspector_active)
+
+    def _update_inspector_button_style(self) -> None:
+        """Update inspector button style based on state."""
+        if self._inspector_active:
+            self.inspector_button.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {theme.accent};
+                    color: {theme.text_primary};
+                    border: none;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-size: 12px;
+                }}
+                QPushButton:hover {{
+                    background-color: {theme.accent_hover};
+                }}
+            """)
+        else:
+            self.inspector_button.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {theme.background_tertiary};
+                    color: {theme.text_secondary};
+                    border: 1px solid {theme.border};
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-size: 12px;
+                }}
+                QPushButton:hover {{
+                    background-color: {theme.background_secondary};
+                    color: {theme.text_primary};
+                }}
+            """)
 
     def set_model(self, model_id: str) -> None:
         """Set the currently selected model.
@@ -365,3 +588,22 @@ class Sidebar(QWidget):
             enabled: Whether to enable
         """
         self.regenerate_button.setEnabled(enabled)
+
+    def add_document(self, doc_id: str, name: str, path: str) -> None:
+        """Add a document to the document panel.
+
+        Args:
+            doc_id: Document ID
+            name: Display name
+            path: File path
+        """
+        self.document_panel.add_document(doc_id, name, path)
+
+    def set_inspector_active(self, active: bool) -> None:
+        """Set the inspector button active state.
+
+        Args:
+            active: Whether inspector is visible
+        """
+        self._inspector_active = active
+        self._update_inspector_button_style()
