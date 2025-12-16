@@ -19,15 +19,18 @@ from .chat_panel import ChatPanel
 from .input_panel import InputPanel
 from .sidebar import Sidebar
 from .inspector import InspectorPanel
+from .dialogs import ExitDialog, ExitAction, HelpDialog, NotificationToast
 from ..config.settings import settings
 from ..config.models import MODELS, get_model, get_available_models
-from ..config.themes import get_stylesheet, theme
+from ..config.themes import get_stylesheet, theme, fonts, metrics
+from ..config.persistence import persistence
 from ..orchestrator.prompt_builder import PromptBuilder
 from ..orchestrator.context_manager import ContextManager, ContextState
 from ..orchestrator.intent_tracker import IntentTracker
 from ..orchestrator.waypoint_manager import WaypointManager
 from ..summarization.summary_generator import SummaryGenerator
 from ..summarization.drift_detector import DriftDetector
+from ..summarization.artifact_generator import ArtifactGenerator
 from ..llm.base_adapter import LLMAdapter
 from ..llm.anthropic_adapter import AnthropicAdapter
 from ..llm.openai_adapter import OpenAIAdapter
@@ -57,8 +60,10 @@ class MainWindow(QMainWindow):
         self._waypoint_manager = WaypointManager()
         self._summary_generator = SummaryGenerator()
         self._drift_detector = DriftDetector()
+        self._artifact_generator = ArtifactGenerator()
         self._is_streaming = False
         self._summarization_in_progress = False
+        self._focus_mode = False
 
         # RAG components (initialized lazily when first document added)
         self._vector_store: Optional[FAISSVectorStore] = None
@@ -84,8 +89,17 @@ class MainWindow(QMainWindow):
         """Set up the main window UI."""
         # Window properties
         self.setWindowTitle(settings.window_title)
-        self.resize(settings.window_width, settings.window_height)
         self.setMinimumSize(600, 400)
+
+        # Restore window state from preferences
+        prefs = persistence.preferences
+        self.move(prefs.window.x, prefs.window.y)
+        self.resize(prefs.window.width, prefs.window.height)
+        if prefs.window.maximized:
+            self.showMaximized()
+
+        # Restore focus mode state
+        self._focus_mode = prefs.focus_mode
 
         # Apply stylesheet
         self.setStyleSheet(get_stylesheet())
@@ -139,31 +153,50 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self.status_bar = QStatusBar()
+        self.status_bar.setStyleSheet(f"""
+            QStatusBar {{
+                background-color: {theme.background_tertiary};
+                border-top: 1px solid {theme.border};
+                font-family: {fonts.ui};
+                font-size: {metrics.font_small}px;
+            }}
+        """)
         self.setStatusBar(self.status_bar)
 
         # Token count label in status bar
         self.token_label = QLabel("Tokens: 0")
         self.token_label.setStyleSheet(f"""
-            color: {theme.text_secondary};
-            padding: 2px 8px;
+            QLabel {{
+                color: {theme.text_secondary};
+                padding: 2px {metrics.padding_medium}px;
+                font-family: {fonts.mono};
+            }}
         """)
         self.status_bar.addPermanentWidget(self.token_label)
 
         # Model label in status bar
         self.model_label = QLabel("Model: -")
         self.model_label.setStyleSheet(f"""
-            color: {theme.text_secondary};
-            padding: 2px 8px;
+            QLabel {{
+                color: {theme.text_secondary};
+                padding: 2px {metrics.padding_medium}px;
+            }}
         """)
         self.status_bar.addPermanentWidget(self.model_label)
 
         # Intent label in status bar
         self.intent_label = QLabel("Mode: exploration")
         self.intent_label.setStyleSheet(f"""
-            color: {theme.text_muted};
-            padding: 2px 8px;
+            QLabel {{
+                color: {theme.text_muted};
+                padding: 2px {metrics.padding_medium}px;
+            }}
         """)
         self.status_bar.addPermanentWidget(self.intent_label)
+
+        # Apply initial focus mode state (after all UI is created)
+        if self._focus_mode:
+            self.sidebar.hide()
 
         # Focus input field after window is shown
         QTimer.singleShot(100, self.input_panel.focus_input)
@@ -178,6 +211,26 @@ class MainWindow(QMainWindow):
         regenerate_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
         regenerate_shortcut.activated.connect(self._on_regenerate_requested)
 
+        # Ctrl+I - Toggle inspector
+        inspector_shortcut = QShortcut(QKeySequence("Ctrl+I"), self)
+        inspector_shortcut.activated.connect(self._on_toggle_inspector)
+
+        # Ctrl+N - New conversation
+        new_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
+        new_shortcut.activated.connect(self._on_new_conversation)
+
+        # Ctrl+F - Toggle focus mode
+        focus_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        focus_shortcut.activated.connect(self._on_toggle_focus_mode)
+
+        # Escape - Close inspector or exit focus mode
+        escape_shortcut = QShortcut(QKeySequence("Escape"), self)
+        escape_shortcut.activated.connect(self._on_escape_pressed)
+
+        # F1 - Show help dialog
+        help_shortcut = QShortcut(QKeySequence("F1"), self)
+        help_shortcut.activated.connect(self._on_show_help)
+
     def _setup_default_model(self) -> None:
         """Set up the default model."""
         available = get_available_models()
@@ -190,8 +243,11 @@ class MainWindow(QMainWindow):
             self.input_panel.set_enabled(False)
             return
 
-        # Try to use default model, or first available
-        default_id = settings.default_model
+        # Try to use persisted model, then default, then first available
+        prefs = persistence.preferences
+        default_id = prefs.last_model
+        if not any(m.model_id == default_id for m in available):
+            default_id = settings.default_model
         if not any(m.model_id == default_id for m in available):
             default_id = available[0].model_id
 
@@ -261,7 +317,30 @@ class MainWindow(QMainWindow):
             model_id: The new model ID
         """
         if model_id != self._current_model_id:
-            self._switch_model(model_id)
+            if self._switch_model(model_id):
+                # Persist the model selection
+                persistence.update_last_model(model_id)
+
+                # Show notification toast
+                model_config = get_model(model_id)
+                if model_config:
+                    self._show_model_notification(model_config.display_name)
+
+    def _show_model_notification(self, model_name: str) -> None:
+        """Show a notification toast for model switch.
+
+        Args:
+            model_name: Display name of the new model
+        """
+        toast = NotificationToast(
+            f"Switched to {model_name}",
+            self,
+            duration_ms=2000,
+        )
+        # Position at top center of the window
+        x = (self.width() - toast.width()) // 2
+        y = 50
+        toast.show_at(x, y)
 
     def _on_message_submitted(self, message: str) -> None:
         """Handle a submitted message.
@@ -747,30 +826,247 @@ class MainWindow(QMainWindow):
             )
 
     def closeEvent(self, event) -> None:
-        """Handle window close event - save session."""
-        # Only save if there was actual conversation
+        """Handle window close event - save session and window state."""
+        # Save window state
+        self._save_window_state()
+
+        # Only show exit dialog if there was actual conversation
         if self._prompt_builder.get_message_count() > 0:
-            # Update session record with final data
-            if self._current_model_id:
-                if self._current_model_id not in self._session_record.models_used:
-                    self._session_record.models_used.append(self._current_model_id)
+            # Get default artifact options from preferences
+            prefs = persistence.preferences
 
-            # Get token count
-            if self._token_counter:
-                messages = self._prompt_builder.build_messages()
-                system = self._prompt_builder.get_system_prompt()
-                self._session_record.token_count = self._token_counter.count_prompt(
-                    system, messages
-                )
+            dialog = ExitDialog(
+                self,
+                default_outline=prefs.generate_outline,
+                default_decisions=prefs.generate_decisions,
+                default_research=prefs.generate_research,
+            )
 
-            # Get summary if present
-            if self._prompt_builder._summary_block:
-                self._session_record.summary_xml = self._prompt_builder._summary_block
+            if dialog.exec() == 0:  # Dialog rejected (Cancel)
+                event.ignore()
+                return
 
-            # Get waypoints
-            self._session_record.waypoints = self._waypoint_manager.get_waypoints_for_archive()
+            action, outline, decisions, research = dialog.get_result()
 
-            # Save to conversation store
-            self._conversation_store.save_session(self._session_record)
+            if action == ExitAction.CANCEL:
+                event.ignore()
+                return
+
+            # Save artifact preferences
+            persistence.update_artifact_options(outline, decisions, research)
+
+            if action == ExitAction.SUMMARIZE_EXIT:
+                # Generate artifacts before exiting
+                self._generate_exit_artifacts(outline, decisions, research)
+
+            # Save session data
+            self._save_session_data()
 
         super().closeEvent(event)
+
+    def _save_window_state(self) -> None:
+        """Save window position and size."""
+        is_maximized = self.isMaximized()
+
+        # Get geometry only if not maximized
+        if not is_maximized:
+            geometry = self.geometry()
+            persistence.update_window_state(
+                x=geometry.x(),
+                y=geometry.y(),
+                width=geometry.width(),
+                height=geometry.height(),
+                maximized=False,
+            )
+        else:
+            # Just update maximized state, keep previous size
+            prefs = persistence.preferences
+            persistence.update_window_state(
+                x=prefs.window.x,
+                y=prefs.window.y,
+                width=prefs.window.width,
+                height=prefs.window.height,
+                maximized=True,
+            )
+
+    def _save_session_data(self) -> None:
+        """Save session data to conversation store."""
+        if self._prompt_builder.get_message_count() == 0:
+            return
+
+        # Update session record with final data
+        if self._current_model_id:
+            if self._current_model_id not in self._session_record.models_used:
+                self._session_record.models_used.append(self._current_model_id)
+
+        # Get token count
+        if self._token_counter:
+            messages = self._prompt_builder.build_messages()
+            system = self._prompt_builder.get_system_prompt()
+            self._session_record.token_count = self._token_counter.count_prompt(
+                system, messages
+            )
+
+        # Get summary if present
+        if self._prompt_builder._summary_block:
+            self._session_record.summary_xml = self._prompt_builder._summary_block
+
+        # Get waypoints
+        self._session_record.waypoints = self._waypoint_manager.get_waypoints_for_archive()
+
+        # Save to conversation store
+        self._conversation_store.save_session(self._session_record)
+
+    def _generate_exit_artifacts(
+        self,
+        outline: bool,
+        decisions: bool,
+        research: bool,
+    ) -> None:
+        """Generate artifacts before exiting.
+
+        Args:
+            outline: Whether to generate conversation outline
+            decisions: Whether to generate decision log
+            research: Whether to generate research index
+        """
+        if not self._adapter:
+            return
+
+        if not any([outline, decisions, research]):
+            return
+
+        self.status_bar.showMessage("Generating artifacts...")
+
+        # Get messages for artifact generation
+        messages = []
+        for msg in self._prompt_builder.history.messages:
+            messages.append({
+                "role": msg.role,
+                "content": msg.content,
+            })
+
+        # Run artifact generation synchronously (blocking)
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            result = loop.run_until_complete(
+                self._artifact_generator.generate_artifacts(
+                    messages=messages,
+                    adapter=self._adapter,
+                    generate_outline=outline,
+                    generate_decisions=decisions,
+                    generate_research=research,
+                )
+            )
+
+            if result.success:
+                # Save artifacts
+                saved = self._artifact_generator.save_artifacts(
+                    result,
+                    self._session_record.session_id,
+                    settings.artifacts_dir,
+                )
+
+                # Update session record
+                for path in saved:
+                    artifact_type = path.stem.split("_")[-1]
+                    if artifact_type not in self._session_record.artifacts_generated:
+                        self._session_record.artifacts_generated.append(artifact_type)
+
+                self.status_bar.showMessage(
+                    f"Saved {len(saved)} artifact(s)", 2000
+                )
+            else:
+                self.status_bar.showMessage(
+                    f"Artifact generation failed: {result.error}", 3000
+                )
+
+        except Exception as e:
+            self.status_bar.showMessage(f"Artifact generation error: {e}", 3000)
+
+    def _on_toggle_inspector(self) -> None:
+        """Toggle inspector panel visibility."""
+        if self._inspector_panel:
+            is_visible = self._inspector_panel.isVisible()
+            if is_visible:
+                self._inspector_panel.hide()
+                self.sidebar.set_inspector_active(False)
+            else:
+                self._inspector_panel.show()
+                self._update_inspector()
+                self.sidebar.set_inspector_active(True)
+
+            # Persist inspector state
+            persistence.update_inspector_visible(not is_visible)
+
+    def _on_new_conversation(self) -> None:
+        """Start a new conversation, clearing the current one."""
+        if self._is_streaming:
+            return
+
+        # Save current session if there's content
+        if self._prompt_builder.get_message_count() > 0:
+            self._save_session_data()
+
+        # Clear UI
+        self.chat_panel.clear()
+
+        # Reset conversation state
+        self._prompt_builder = PromptBuilder()
+        self._intent_tracker = IntentTracker()
+        self._waypoint_manager = WaypointManager()
+        self._drift_detector = DriftDetector()
+
+        # Create new session record
+        self._session_record = SessionRecord.create()
+
+        # Update context display
+        self._update_token_count()
+
+        # Reset intent display
+        self.intent_label.setText("Mode: exploration")
+
+        # Disable regenerate button
+        self.sidebar.set_regenerate_enabled(False)
+
+        # Focus input
+        self.input_panel.focus_input()
+
+        self.status_bar.showMessage("New conversation started", 2000)
+
+    def _on_toggle_focus_mode(self) -> None:
+        """Toggle focus mode (hide/show sidebar)."""
+        self._focus_mode = not self._focus_mode
+
+        if self._focus_mode:
+            self.sidebar.hide()
+        else:
+            self.sidebar.show()
+
+        # Persist focus mode state
+        persistence.update_focus_mode(self._focus_mode)
+
+        # Focus input after toggle
+        self.input_panel.focus_input()
+
+    def _on_escape_pressed(self) -> None:
+        """Handle Escape key - close inspector or exit focus mode."""
+        # First, close inspector if visible
+        if self._inspector_panel and self._inspector_panel.isVisible():
+            self._inspector_panel.hide()
+            self.sidebar.set_inspector_active(False)
+            persistence.update_inspector_visible(False)
+            return
+
+        # Then, exit focus mode if active
+        if self._focus_mode:
+            self._focus_mode = False
+            self.sidebar.show()
+            persistence.update_focus_mode(False)
+            self.input_panel.focus_input()
+
+    def _on_show_help(self) -> None:
+        """Show the help dialog with keyboard shortcuts."""
+        dialog = HelpDialog(self)
+        dialog.exec()

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 
-from ..config.themes import theme
+from ..config.themes import theme, fonts, metrics
 from ..config.models import MODELS, get_available_models, ModelConfig
 
 
@@ -41,17 +41,26 @@ class ModelSelector(QFrame):
     def _setup_ui(self) -> None:
         """Set up the selector UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(
+            metrics.padding_medium,
+            metrics.padding_medium,
+            metrics.padding_medium,
+            metrics.padding_medium,
+        )
+        layout.setSpacing(metrics.padding_small)
 
         # Label
         label = QLabel("Model")
         label.setStyleSheet(f"""
-            color: {theme.text_secondary};
-            font-size: 11px;
-            font-weight: bold;
-            text-transform: uppercase;
-            background: transparent;
+            QLabel {{
+                color: {theme.text_secondary};
+                font-size: {metrics.font_small}px;
+                font-weight: 600;
+                font-family: {fonts.ui};
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                background: transparent;
+            }}
         """)
         layout.addWidget(label)
 
@@ -59,33 +68,40 @@ class ModelSelector(QFrame):
         self.combo = QComboBox()
         self.combo.setStyleSheet(f"""
             QComboBox {{
-                background-color: {theme.background_secondary};
+                background-color: {theme.background};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
-                border-radius: 6px;
-                padding: 8px 12px;
-                min-height: 20px;
+                border-radius: {metrics.radius_medium}px;
+                padding: {metrics.padding_medium}px {metrics.padding_medium}px;
+                min-height: 24px;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
             }}
             QComboBox:hover {{
                 border-color: {theme.accent};
             }}
+            QComboBox:focus {{
+                border-color: {theme.accent};
+            }}
             QComboBox::drop-down {{
                 border: none;
-                width: 20px;
+                width: 24px;
             }}
             QComboBox::down-arrow {{
                 image: none;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
                 border-top: 6px solid {theme.text_secondary};
-                margin-right: 8px;
+                margin-right: {metrics.padding_small}px;
             }}
             QComboBox QAbstractItemView {{
                 background-color: {theme.background_secondary};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
+                border-radius: {metrics.radius_small}px;
                 selection-background-color: {theme.accent};
                 outline: none;
+                padding: {metrics.padding_small}px;
             }}
         """)
         self.combo.currentIndexChanged.connect(self._on_selection_changed)
@@ -98,7 +114,7 @@ class ModelSelector(QFrame):
         self.setStyleSheet(f"""
             ModelSelector {{
                 background-color: {theme.background_secondary};
-                border-radius: 8px;
+                border-radius: {metrics.radius_medium}px;
             }}
         """)
 
@@ -187,17 +203,26 @@ class ContextBudgetIndicator(QFrame):
     def _setup_ui(self) -> None:
         """Set up the indicator UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(
+            metrics.padding_medium,
+            metrics.padding_medium,
+            metrics.padding_medium,
+            metrics.padding_medium,
+        )
+        layout.setSpacing(metrics.padding_small)
 
         # Label
-        label = QLabel("Context")
+        label = QLabel("Context Budget")
         label.setStyleSheet(f"""
-            color: {theme.text_secondary};
-            font-size: 11px;
-            font-weight: bold;
-            text-transform: uppercase;
-            background: transparent;
+            QLabel {{
+                color: {theme.text_secondary};
+                font-size: {metrics.font_small}px;
+                font-weight: 600;
+                font-family: {fonts.ui};
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                background: transparent;
+            }}
         """)
         layout.addWidget(label)
 
@@ -205,17 +230,20 @@ class ContextBudgetIndicator(QFrame):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.progress.setTextVisible(True)
-        self.progress.setFormat("%p%")
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(6)
         self._update_progress_style(0)
         layout.addWidget(self.progress)
 
         # Token count label
         self.token_label = QLabel("0 / 0 tokens")
         self.token_label.setStyleSheet(f"""
-            color: {theme.text_muted};
-            font-size: 11px;
-            background: transparent;
+            QLabel {{
+                color: {theme.text_muted};
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.mono};
+                background: transparent;
+            }}
         """)
         layout.addWidget(self.token_label)
 
@@ -223,7 +251,7 @@ class ContextBudgetIndicator(QFrame):
         self.setStyleSheet(f"""
             ContextBudgetIndicator {{
                 background-color: {theme.background_secondary};
-                border-radius: 8px;
+                border-radius: {metrics.radius_medium}px;
             }}
         """)
 
@@ -246,27 +274,29 @@ class ContextBudgetIndicator(QFrame):
     def _update_progress_style(self, percentage: int) -> None:
         """Update progress bar color based on percentage.
 
+        Uses gradient: green (< 50%) → yellow (50-70%) → orange (70-85%) → red (85%+)
+
         Args:
             percentage: Current percentage
         """
-        if percentage >= 80:
-            color = theme.warning  # Orange at 80%+
-        elif percentage >= 60:
-            color = "#d4a017"  # Yellow at 60%+
+        if percentage >= 85:
+            color = theme.budget_red
+        elif percentage >= 70:
+            color = theme.budget_orange
+        elif percentage >= 50:
+            color = theme.budget_yellow
         else:
-            color = theme.success  # Green below 60%
+            color = theme.budget_green
 
         self.progress.setStyleSheet(f"""
             QProgressBar {{
                 background-color: {theme.background_tertiary};
                 border: none;
-                border-radius: 4px;
-                height: 8px;
-                text-align: center;
+                border-radius: 3px;
             }}
             QProgressBar::chunk {{
                 background-color: {color};
-                border-radius: 4px;
+                border-radius: 3px;
             }}
         """)
 
@@ -290,17 +320,26 @@ class DocumentPanel(QFrame):
     def _setup_ui(self) -> None:
         """Set up the document panel UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(
+            metrics.padding_medium,
+            metrics.padding_medium,
+            metrics.padding_medium,
+            metrics.padding_medium,
+        )
+        layout.setSpacing(metrics.padding_small)
 
         # Label
         label = QLabel("Documents")
         label.setStyleSheet(f"""
-            color: {theme.text_secondary};
-            font-size: 11px;
-            font-weight: bold;
-            text-transform: uppercase;
-            background: transparent;
+            QLabel {{
+                color: {theme.text_secondary};
+                font-size: {metrics.font_small}px;
+                font-weight: 600;
+                font-family: {fonts.ui};
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                background: transparent;
+            }}
         """)
         layout.addWidget(label)
 
@@ -312,14 +351,19 @@ class DocumentPanel(QFrame):
                 background-color: {theme.background};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
-                border-radius: 4px;
-                font-size: 11px;
+                border-radius: {metrics.radius_small}px;
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.ui};
             }}
             QListWidget::item {{
-                padding: 4px;
+                padding: {metrics.padding_small}px;
+                border-radius: {metrics.radius_small}px;
             }}
             QListWidget::item:selected {{
                 background-color: {theme.accent};
+            }}
+            QListWidget::item:hover {{
+                background-color: {theme.background_tertiary};
             }}
         """)
         self.doc_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -328,17 +372,19 @@ class DocumentPanel(QFrame):
 
         # Add button
         self.add_button = QPushButton("+ Add Document")
+        self.add_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {theme.background_tertiary};
+                background-color: transparent;
                 color: {theme.text_secondary};
                 border: 1px dashed {theme.border};
-                border-radius: 4px;
-                padding: 6px;
-                font-size: 11px;
+                border-radius: {metrics.radius_small}px;
+                padding: {metrics.padding_small}px;
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.ui};
             }}
             QPushButton:hover {{
-                background-color: {theme.background_secondary};
+                background-color: {theme.background_tertiary};
                 color: {theme.text_primary};
                 border-color: {theme.accent};
             }}
@@ -350,7 +396,7 @@ class DocumentPanel(QFrame):
         self.setStyleSheet(f"""
             DocumentPanel {{
                 background-color: {theme.background_secondary};
-                border-radius: 8px;
+                border-radius: {metrics.radius_medium}px;
             }}
         """)
 
@@ -377,6 +423,14 @@ class DocumentPanel(QFrame):
                 background-color: {theme.background_secondary};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
+                border-radius: {metrics.radius_small}px;
+                padding: {metrics.padding_small}px;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QMenu::item {{
+                padding: {metrics.padding_small}px {metrics.padding_medium}px;
+                border-radius: {metrics.radius_small}px;
             }}
             QMenu::item:selected {{
                 background-color: {theme.accent};
@@ -454,8 +508,13 @@ class Sidebar(QWidget):
     def _setup_ui(self) -> None:
         """Set up the sidebar UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(12)
+        layout.setContentsMargins(
+            metrics.padding_medium,
+            metrics.padding_medium,
+            metrics.padding_medium,
+            metrics.padding_medium,
+        )
+        layout.setSpacing(metrics.padding_medium)
 
         # Model selector
         self.model_selector = ModelSelector()
@@ -474,17 +533,19 @@ class Sidebar(QWidget):
 
         # Regenerate button
         self.regenerate_button = QPushButton("Regenerate (Ctrl+R)")
+        self.regenerate_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.regenerate_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {theme.background_tertiary};
+                background-color: {theme.background_secondary};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
-                border-radius: 6px;
-                padding: 8px 12px;
-                font-size: 12px;
+                border-radius: {metrics.radius_medium}px;
+                padding: {metrics.padding_medium}px {metrics.padding_medium}px;
+                font-size: {metrics.font_normal}px;
+                font-family: {fonts.ui};
             }}
             QPushButton:hover {{
-                background-color: {theme.background_secondary};
+                background-color: {theme.background_tertiary};
                 border-color: {theme.accent};
             }}
             QPushButton:pressed {{
@@ -492,13 +553,15 @@ class Sidebar(QWidget):
             }}
             QPushButton:disabled {{
                 color: {theme.text_muted};
+                background-color: {theme.background_tertiary};
             }}
         """)
         self.regenerate_button.clicked.connect(self.regenerate_requested)
         layout.addWidget(self.regenerate_button)
 
         # Inspector toggle button
-        self.inspector_button = QPushButton("Inspector")
+        self.inspector_button = QPushButton("Inspector (Ctrl+I)")
+        self.inspector_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._inspector_active = False
         self._update_inspector_button_style()
         self.inspector_button.clicked.connect(self._on_inspector_toggle)
@@ -508,7 +571,7 @@ class Sidebar(QWidget):
         layout.addStretch()
 
         # Set width
-        self.setFixedWidth(220)
+        self.setFixedWidth(240)
 
         # Style
         self.setStyleSheet(f"""
@@ -530,11 +593,13 @@ class Sidebar(QWidget):
             self.inspector_button.setStyleSheet(f"""
                 QPushButton {{
                     background-color: {theme.accent};
-                    color: {theme.text_primary};
+                    color: white;
                     border: none;
-                    border-radius: 6px;
-                    padding: 8px 12px;
-                    font-size: 12px;
+                    border-radius: {metrics.radius_medium}px;
+                    padding: {metrics.padding_medium}px {metrics.padding_medium}px;
+                    font-size: {metrics.font_normal}px;
+                    font-family: {fonts.ui};
+                    font-weight: 500;
                 }}
                 QPushButton:hover {{
                     background-color: {theme.accent_hover};
@@ -543,16 +608,18 @@ class Sidebar(QWidget):
         else:
             self.inspector_button.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: {theme.background_tertiary};
+                    background-color: {theme.background_secondary};
                     color: {theme.text_secondary};
                     border: 1px solid {theme.border};
-                    border-radius: 6px;
-                    padding: 8px 12px;
-                    font-size: 12px;
+                    border-radius: {metrics.radius_medium}px;
+                    padding: {metrics.padding_medium}px {metrics.padding_medium}px;
+                    font-size: {metrics.font_normal}px;
+                    font-family: {fonts.ui};
                 }}
                 QPushButton:hover {{
-                    background-color: {theme.background_secondary};
+                    background-color: {theme.background_tertiary};
                     color: {theme.text_primary};
+                    border-color: {theme.accent};
                 }}
             """)
 
