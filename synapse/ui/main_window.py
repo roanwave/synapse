@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("No API keys configured")
             self.chat_panel.add_error_message(
                 "No API keys configured. Please set ANTHROPIC_API_KEY, "
-                "OPENAI_API_KEY, or OPENROUTER_API_KEY environment variable."
+                "OPENAI_API_KEY, or OPENROUTER_KEY environment variable."
             )
             self.input_panel.set_enabled(False)
             return

@@ -30,13 +30,13 @@ class OpenRouterAdapter(LLMAdapter):
             model_id: The OpenRouter model ID to use
 
         Raises:
-            ValueError: If OPENROUTER_API_KEY is not set
+            ValueError: If OPENROUTER_KEY is not set
         """
         self._model_id = model_id
         api_key = get_api_key("openrouter")
         if not api_key:
             raise ValueError(
-                "OPENROUTER_API_KEY environment variable is not set. "
+                "OPENROUTER_KEY environment variable is not set. "
                 "Please set it to your OpenRouter API key."
             )
         self._client = AsyncOpenAI(

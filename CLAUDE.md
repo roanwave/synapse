@@ -166,7 +166,7 @@ Each line is a complete session record:
 
 ## Conventions
 
-- **API keys**: Load from environment variables only (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`)
+- **API keys**: Load from environment variables only (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_KEY`)
 - **Token counting**: Use tiktoken for OpenAI models, anthropic's counter for Claude
 - **Embedding model**: Default to `text-embedding-3-small` for cost/performance balance
 - **File paths**: Use `pathlib.Path` everywhere, never raw strings
