@@ -32,11 +32,13 @@ class AppSettings:
     # Paths
     app_data_dir: Path = Path.home() / ".synapse"
     logs_dir: Path = Path.home() / ".synapse" / "logs"
+    conversations_dir: Path = Path.home() / ".synapse" / "conversations"
 
     def __post_init__(self) -> None:
         """Ensure directories exist."""
         self.app_data_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.conversations_dir.mkdir(parents=True, exist_ok=True)
 
 
 def get_api_key(provider: str) -> Optional[str]:

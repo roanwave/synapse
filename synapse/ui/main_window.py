@@ -34,10 +34,12 @@ from ..llm.openai_adapter import OpenAIAdapter
 from ..llm.openrouter_adapter import OpenRouterAdapter
 from ..llm.gabai_adapter import GabAIAdapter
 from ..utils.token_counter import TokenCounter
+from ..storage import SessionRecord
 from ..storage.vector_store_client import FAISSVectorStore
 from ..storage.bm25_client import BM25Client, reciprocal_rank_fusion
 from ..storage.document_indexer import DocumentIndexer
 from ..storage.retrieval_blacklist import RetrievalBlacklist
+from ..storage.conversation_store import ConversationStore
 
 
 class MainWindow(QMainWindow):
@@ -67,6 +69,12 @@ class MainWindow(QMainWindow):
 
         # Inspector panel
         self._inspector_panel: Optional[InspectorPanel] = None
+
+        # Session tracking
+        self._session_record = SessionRecord.create()
+        self._conversation_store = ConversationStore(
+            settings.conversations_dir / "sessions.jsonl"
+        )
 
         self._setup_ui()
         self._setup_shortcuts()
@@ -737,3 +745,32 @@ class MainWindow(QMainWindow):
                 total=total,
                 context_window=self._context_manager.context_window,
             )
+
+    def closeEvent(self, event) -> None:
+        """Handle window close event - save session."""
+        # Only save if there was actual conversation
+        if self._prompt_builder.get_message_count() > 0:
+            # Update session record with final data
+            if self._current_model_id:
+                if self._current_model_id not in self._session_record.models_used:
+                    self._session_record.models_used.append(self._current_model_id)
+
+            # Get token count
+            if self._token_counter:
+                messages = self._prompt_builder.build_messages()
+                system = self._prompt_builder.get_system_prompt()
+                self._session_record.token_count = self._token_counter.count_prompt(
+                    system, messages
+                )
+
+            # Get summary if present
+            if self._prompt_builder._summary_block:
+                self._session_record.summary_xml = self._prompt_builder._summary_block
+
+            # Get waypoints
+            self._session_record.waypoints = self._waypoint_manager.get_waypoints_for_archive()
+
+            # Save to conversation store
+            self._conversation_store.save_session(self._session_record)
+
+        super().closeEvent(event)
