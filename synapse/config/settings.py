@@ -8,8 +8,13 @@ from typing import Optional
 from dotenv import load_dotenv
 
 
+# Find project root (parent of synapse package)
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 # Load environment variables from .env file if present
-load_dotenv()
+# Check both project root and current working directory
+load_dotenv(_PROJECT_ROOT / ".env")
+load_dotenv()  # Also check CWD as fallback
 
 
 @dataclass
