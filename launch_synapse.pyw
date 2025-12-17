@@ -22,12 +22,12 @@ if str(project_root) not in sys.path:
 os.chdir(project_root)
 
 
-def main():
+def launch():
     """Launch the Synapse application."""
     try:
-        # Import and run the main application
-        from synapse.main import main as run_synapse
-        run_synapse()
+        # Import and run from main.py in project root
+        from main import main
+        main()
     except Exception as e:
         # If there's an error, show it in a message box
         # (since we don't have a console)
@@ -47,4 +47,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    launch()
