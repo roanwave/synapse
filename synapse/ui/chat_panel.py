@@ -187,10 +187,10 @@ class MessageBubble(QFrame):
         html = render_markdown(content)
         self.content_browser.setHtml(html)
 
-        # Adjust height to content
+        # Adjust height to content - minimal padding
         self.content_browser.document().setTextWidth(self.content_browser.viewport().width())
         doc_height = self.content_browser.document().size().height()
-        self.content_browser.setMinimumHeight(int(doc_height) + 10)
+        self.content_browser.setMinimumHeight(int(doc_height) + 2)
 
     def _on_link_clicked(self, url) -> None:
         """Handle link clicks by opening in external browser.
@@ -284,9 +284,9 @@ class ChatPanel(QWidget):
             }}
         """)
         self.messages_layout = QVBoxLayout(self.messages_container)
-        # Tight margins - conversation should flow
-        self.messages_layout.setContentsMargins(16, 12, 16, 12)
-        self.messages_layout.setSpacing(8)  # Tight spacing between messages
+        # Minimal margins - tight conversation flow
+        self.messages_layout.setContentsMargins(12, 8, 12, 8)
+        self.messages_layout.setSpacing(4)  # Minimal spacing between messages
         self.messages_layout.addStretch()  # Push messages to top initially
 
         self.scroll_area.setWidget(self.messages_container)

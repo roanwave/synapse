@@ -29,28 +29,28 @@ def get_markdown_css() -> str:
             color: {theme.text_primary};
             font-family: {fonts.chat};
             font-size: {metrics.font_medium}px;
-            line-height: 1.35;
+            line-height: 1.3;
             margin: 0;
             padding: 0;
         }}
 
-        /* Headings */
+        /* Headings - minimal spacing */
         h1, h2, h3, h4, h5, h6 {{
             color: {theme.text_primary};
             font-family: {fonts.ui};
-            margin-top: 8px;
-            margin-bottom: 4px;
+            margin-top: 4px;
+            margin-bottom: 2px;
             font-weight: 600;
         }}
-        h1 {{ font-size: 1.3em; }}
-        h2 {{ font-size: 1.2em; }}
+        h1 {{ font-size: 1.2em; }}
+        h2 {{ font-size: 1.15em; }}
         h3 {{ font-size: 1.1em; }}
         h4, h5, h6 {{ font-size: 1em; }}
 
-        /* Paragraphs */
+        /* Paragraphs - tight */
         p {{
             margin-top: 0;
-            margin-bottom: 6px;
+            margin-bottom: 3px;
         }}
 
         /* Bold and italic */
@@ -71,14 +71,19 @@ def get_markdown_css() -> str:
             text-decoration: underline;
         }}
 
-        /* Lists - tight spacing */
+        /* Lists - very tight */
         ul, ol {{
-            margin-top: 2px;
-            margin-bottom: 6px;
-            padding-left: 20px;
+            margin-top: 0;
+            margin-bottom: 3px;
+            padding-left: 18px;
         }}
         li {{
-            margin-bottom: 1px;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }}
+        li p {{
+            margin-top: 1px;
+            margin-bottom: 2px;
         }}
 
         /* Code - inline */
@@ -86,8 +91,8 @@ def get_markdown_css() -> str:
             font-family: {fonts.mono};
             font-size: 0.9em;
             background-color: {theme.background_tertiary};
-            padding: 1px 4px;
-            border-radius: 3px;
+            padding: 1px 3px;
+            border-radius: 2px;
             color: {theme.text_primary};
         }}
 
@@ -96,10 +101,10 @@ def get_markdown_css() -> str:
             font-family: {fonts.mono};
             font-size: 0.9em;
             background-color: {theme.background_tertiary};
-            padding: 8px;
-            border-radius: 4px;
+            padding: 6px;
+            border-radius: 3px;
             overflow-x: auto;
-            margin: 6px 0;
+            margin: 3px 0;
             border: 1px solid {theme.border};
         }}
         pre code {{
@@ -110,9 +115,9 @@ def get_markdown_css() -> str:
 
         /* Blockquotes */
         blockquote {{
-            margin: 6px 0;
-            padding: 4px 12px;
-            border-left: 3px solid {theme.accent};
+            margin: 3px 0;
+            padding: 2px 8px;
+            border-left: 2px solid {theme.accent};
             background-color: {theme.background_secondary};
             color: {theme.text_secondary};
         }}
@@ -124,18 +129,18 @@ def get_markdown_css() -> str:
         hr {{
             border: none;
             border-top: 1px solid {theme.border};
-            margin: 8px 0;
+            margin: 4px 0;
         }}
 
         /* Tables */
         table {{
             border-collapse: collapse;
-            margin: 6px 0;
+            margin: 3px 0;
             width: 100%;
         }}
         th, td {{
             border: 1px solid {theme.border};
-            padding: 4px 8px;
+            padding: 2px 6px;
             text-align: left;
         }}
         th {{
