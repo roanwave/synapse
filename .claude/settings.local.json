@@ -17,7 +17,9 @@
       "Bash(python scripts/generate_icon.py:*)",
       "Bash(python scripts/create_shortcut.py:*)",
       "Bash(git -C \"C:/Users/erick/projects/synapse\" add -A)",
-      "Bash(git -C \"C:/Users/erick/projects/synapse\" status)"
+      "Bash(git -C \"C:/Users/erick/projects/synapse\" status)",
+      "Bash(git -C \"C:/Users/erick/projects/synapse\" commit -m \"$(cat <<''EOF''\nfix: OpenAI API max_completion_tokens, refine chat styling\n\n- Change max_tokens to max_completion_tokens for OpenAI API compatibility\n- Minimal chat styling: remove heavy bubble backgrounds\n- User messages: subtle left border accent only\n- Assistant messages: no decoration, just text\n- Reduce padding throughout for cleaner look\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git -C \"C:/Users/erick/projects/synapse\" push origin main)"
     ]
   }
 }

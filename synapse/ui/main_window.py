@@ -119,6 +119,7 @@ class MainWindow(QMainWindow):
         self.sidebar.regenerate_requested.connect(self._on_regenerate_requested)
         self.sidebar.document_added.connect(self._on_document_added)
         self.sidebar.document_removed.connect(self._on_document_removed)
+        self.sidebar.documents_cleared.connect(self._on_documents_cleared)
         self.sidebar.inspector_toggled.connect(self._on_inspector_toggled)
         main_layout.addWidget(self.sidebar)
 
@@ -608,11 +609,11 @@ class MainWindow(QMainWindow):
             return True
 
         try:
-            # Initialize vector store
-            index_path = settings.app_data_dir / "index"
+            # Initialize vector store WITHOUT persistence path
+            # Each session starts fresh to prevent context contamination
             self._vector_store = FAISSVectorStore(
                 dimension=1536,  # text-embedding-3-small
-                index_path=index_path,
+                index_path=None,  # No persistence - fresh each session
             )
 
             # Initialize BM25 client
@@ -685,6 +686,14 @@ class MainWindow(QMainWindow):
         if self._document_indexer:
             self._document_indexer.delete_document(doc_id)
             self.status_bar.showMessage("Document removed", 2000)
+
+    def _on_documents_cleared(self) -> None:
+        """Handle clear all documents signal."""
+        if self._vector_store:
+            self._vector_store.clear()
+        if self._bm25_client:
+            self._bm25_client.clear()
+        self.status_bar.showMessage("All documents cleared", 2000)
 
     def _on_inspector_toggled(self, visible: bool) -> None:
         """Handle inspector toggle.

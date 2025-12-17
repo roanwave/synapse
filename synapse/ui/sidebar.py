@@ -306,6 +306,7 @@ class DocumentPanel(QFrame):
 
     document_added = Signal(str)  # Emits file path
     document_removed = Signal(str)  # Emits doc_id
+    documents_cleared = Signal()  # Emits when all documents cleared
 
     def __init__(self, parent: QWidget | None = None):
         """Initialize the document panel.
@@ -370,8 +371,12 @@ class DocumentPanel(QFrame):
         self.doc_list.customContextMenuRequested.connect(self._show_context_menu)
         layout.addWidget(self.doc_list)
 
+        # Button row
+        button_row = QHBoxLayout()
+        button_row.setSpacing(metrics.padding_small)
+
         # Add button
-        self.add_button = QPushButton("+ Add Document")
+        self.add_button = QPushButton("+ Add")
         self.add_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_button.setStyleSheet(f"""
             QPushButton {{
@@ -390,7 +395,31 @@ class DocumentPanel(QFrame):
             }}
         """)
         self.add_button.clicked.connect(self._on_add_clicked)
-        layout.addWidget(self.add_button)
+        button_row.addWidget(self.add_button)
+
+        # Clear all button
+        self.clear_button = QPushButton("Clear All")
+        self.clear_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {theme.text_muted};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_small}px;
+                padding: {metrics.padding_small}px;
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.ui};
+            }}
+            QPushButton:hover {{
+                background-color: {theme.background_tertiary};
+                color: {theme.error};
+                border-color: {theme.error};
+            }}
+        """)
+        self.clear_button.clicked.connect(self._on_clear_clicked)
+        button_row.addWidget(self.clear_button)
+
+        layout.addLayout(button_row)
 
         # Style the frame
         self.setStyleSheet(f"""
@@ -410,6 +439,12 @@ class DocumentPanel(QFrame):
         )
         if file_path:
             self.document_added.emit(file_path)
+
+    def _on_clear_clicked(self) -> None:
+        """Handle clear all documents button click."""
+        if self._documents:
+            self.clear()
+            self.documents_cleared.emit()
 
     def _show_context_menu(self, pos) -> None:
         """Show context menu for document list."""
@@ -494,6 +529,7 @@ class Sidebar(QWidget):
     regenerate_requested = Signal()
     document_added = Signal(str)  # Emits file path
     document_removed = Signal(str)  # Emits doc_id
+    documents_cleared = Signal()  # Emits when all documents cleared
     inspector_toggled = Signal(bool)  # Emits visibility state
 
     def __init__(self, parent: QWidget | None = None):
@@ -529,6 +565,7 @@ class Sidebar(QWidget):
         self.document_panel = DocumentPanel()
         self.document_panel.document_added.connect(self.document_added)
         self.document_panel.document_removed.connect(self.document_removed)
+        self.document_panel.documents_cleared.connect(self.documents_cleared)
         layout.addWidget(self.document_panel)
 
         # Regenerate button

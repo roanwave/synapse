@@ -119,21 +119,19 @@ class MessageBubble(QFrame):
     def _setup_ui(self, content: str) -> None:
         """Set up the bubble UI."""
         layout = QVBoxLayout(self)
-        # Minimal padding - let text breathe without heavy chrome
-        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        # Role label - subtle, small
+        # Minimal role indicator - just initials, very subtle
         role_text = "You" if self.role == "user" else "Assistant"
         role_label = QLabel(role_text)
         role_label.setStyleSheet(f"""
             QLabel {{
                 color: {theme.text_muted};
-                font-size: 11px;
+                font-size: 10px;
                 font-weight: 500;
                 font-family: {fonts.ui};
                 background: transparent;
-                padding-left: 2px;
             }}
         """)
         layout.addWidget(role_label)
@@ -169,25 +167,14 @@ class MessageBubble(QFrame):
 
         layout.addWidget(self.content_browser)
 
-        # Minimal styling - no heavy bubbles
-        # User messages: very subtle left border accent
-        # Assistant messages: no decoration at all
-        if self.role == "user":
-            self.setStyleSheet(f"""
-                MessageBubble {{
-                    background-color: transparent;
-                    border-left: 2px solid {theme.accent};
-                    padding-left: 8px;
-                    margin-left: 4px;
-                }}
-            """)
-        else:
-            self.setStyleSheet("""
-                MessageBubble {
-                    background-color: transparent;
-                    border: none;
-                }
-            """)
+        # Clean styling - no borders, no heavy backgrounds
+        # Just transparent frames, differentiated by text color only
+        self.setStyleSheet("""
+            MessageBubble {
+                background-color: transparent;
+                border: none;
+            }
+        """)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
@@ -297,9 +284,9 @@ class ChatPanel(QWidget):
             }}
         """)
         self.messages_layout = QVBoxLayout(self.messages_container)
-        # Comfortable but not bloated margins
-        self.messages_layout.setContentsMargins(16, 12, 16, 12)
-        self.messages_layout.setSpacing(16)  # Space between messages
+        # Clean margins with good separation between messages
+        self.messages_layout.setContentsMargins(20, 16, 20, 16)
+        self.messages_layout.setSpacing(20)  # Good vertical separation
         self.messages_layout.addStretch()  # Push messages to top initially
 
         self.scroll_area.setWidget(self.messages_container)
