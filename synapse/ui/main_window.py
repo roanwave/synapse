@@ -594,7 +594,9 @@ class MainWindow(QMainWindow):
         """Handle window show event."""
         super().showEvent(event)
         # Ensure input has focus when window is shown
-        QTimer.singleShot(0, self.input_panel.focus_input)
+        # Check that UI is initialized (showEvent can fire before _setup_ui completes)
+        if hasattr(self, 'input_panel'):
+            QTimer.singleShot(0, self.input_panel.focus_input)
 
     def _init_rag(self) -> bool:
         """Initialize RAG components lazily.
