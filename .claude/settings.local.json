@@ -19,7 +19,9 @@
       "Bash(git -C \"C:/Users/erick/projects/synapse\" add -A)",
       "Bash(git -C \"C:/Users/erick/projects/synapse\" status)",
       "Bash(git -C \"C:/Users/erick/projects/synapse\" commit -m \"$(cat <<''EOF''\nfix: OpenAI API max_completion_tokens, refine chat styling\n\n- Change max_tokens to max_completion_tokens for OpenAI API compatibility\n- Minimal chat styling: remove heavy bubble backgrounds\n- User messages: subtle left border accent only\n- Assistant messages: no decoration, just text\n- Reduce padding throughout for cleaner look\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git -C \"C:/Users/erick/projects/synapse\" push origin main)"
+      "Bash(git -C \"C:/Users/erick/projects/synapse\" push origin main)",
+      "Bash(git -C \"C:/Users/erick/projects/synapse\" commit -m \"$(cat <<''EOF''\nfix: clear vector index on startup, refine chat styling\n\nContext contamination fix:\n- Vector store now starts fresh each session (no persistence)\n- Prevents documents from previous sessions bleeding into new ones\n- Added \"Clear All\" button to document panel for manual reset\n\nChat styling refinements:\n- Removed heavy blue left border from user messages\n- Minimal role labels (10px, muted color)\n- Clean transparent backgrounds, no borders\n- Better spacing between messages (20px)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git -C \"C:/Users/erick/projects/synapse\" commit -m \"$(cat <<''EOF''\nfix: tighten chat spacing - reduce bloat throughout\n\n- Message spacing: 20px -> 8px between messages\n- Line height: 1.6 -> 1.35\n- Paragraph margins: 10px -> 6px\n- List item margins: 4px -> 1px\n- Heading margins: 16px/8px -> 8px/4px\n- Code block padding: 12px -> 8px\n- Table cell padding: 8px 12px -> 4px 8px\n- Overall tighter, denser layout like modern chat UIs\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
     ]
   }
 }

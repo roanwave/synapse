@@ -284,9 +284,9 @@ class ChatPanel(QWidget):
             }}
         """)
         self.messages_layout = QVBoxLayout(self.messages_container)
-        # Clean margins with good separation between messages
-        self.messages_layout.setContentsMargins(20, 16, 20, 16)
-        self.messages_layout.setSpacing(20)  # Good vertical separation
+        # Tight margins - conversation should flow
+        self.messages_layout.setContentsMargins(16, 12, 16, 12)
+        self.messages_layout.setSpacing(8)  # Tight spacing between messages
         self.messages_layout.addStretch()  # Push messages to top initially
 
         self.scroll_area.setWidget(self.messages_container)
