@@ -120,7 +120,7 @@ class MessageBubble(QFrame):
         """Set up the bubble UI."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setSpacing(1)  # Minimal gap between label and content
 
         # Minimal role indicator - just initials, very subtle
         role_text = "You" if self.role == "user" else "Assistant"
@@ -141,6 +141,9 @@ class MessageBubble(QFrame):
         self.content_browser.setOpenExternalLinks(True)
         self.content_browser.setOpenLinks(False)  # Handle links manually
         self.content_browser.anchorClicked.connect(self._on_link_clicked)
+
+        # Remove all internal document margins
+        self.content_browser.document().setDocumentMargin(0)
 
         # Style the text browser - clean and minimal
         self.content_browser.setStyleSheet(f"""
@@ -284,9 +287,9 @@ class ChatPanel(QWidget):
             }}
         """)
         self.messages_layout = QVBoxLayout(self.messages_container)
-        # Minimal margins - tight conversation flow
-        self.messages_layout.setContentsMargins(12, 8, 12, 8)
-        self.messages_layout.setSpacing(4)  # Minimal spacing between messages
+        # Ultra-tight conversation flow
+        self.messages_layout.setContentsMargins(12, 6, 12, 6)
+        self.messages_layout.setSpacing(2)  # Near-zero spacing between messages
         self.messages_layout.addStretch()  # Push messages to top initially
 
         self.scroll_area.setWidget(self.messages_container)
