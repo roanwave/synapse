@@ -107,10 +107,11 @@ class OpenAIAdapter(LLMAdapter):
                 )
             else:
                 # Standard streaming for non-reasoning models
+                # Use max_completion_tokens for newer API compatibility
                 stream = await self._client.chat.completions.create(
                     model=self._model_id,
                     messages=api_messages,
-                    max_tokens=max_tokens,
+                    max_completion_tokens=max_tokens,
                     stream=True,
                     stream_options={"include_usage": True},
                 )
@@ -182,7 +183,7 @@ class OpenAIAdapter(LLMAdapter):
                 response = await self._client.chat.completions.create(
                     model=self._model_id,
                     messages=api_messages,
-                    max_tokens=max_tokens,
+                    max_completion_tokens=max_tokens,
                 )
 
             return response.choices[0].message.content or ""

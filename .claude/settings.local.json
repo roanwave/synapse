@@ -10,7 +10,14 @@
       "Bash(git push:*)",
       "WebSearch",
       "WebFetch(domain:docs.anthropic.com)",
-      "WebFetch(domain:docs.claude.com)"
+      "WebFetch(domain:docs.claude.com)",
+      "Bash(cd:*)",
+      "Bash(git tag:*)",
+      "Bash(dir:*)",
+      "Bash(python scripts/generate_icon.py:*)",
+      "Bash(python scripts/create_shortcut.py:*)",
+      "Bash(git -C \"C:/Users/erick/projects/synapse\" add -A)",
+      "Bash(git -C \"C:/Users/erick/projects/synapse\" status)"
     ]
   }
 }

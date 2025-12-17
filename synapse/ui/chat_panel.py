@@ -119,24 +119,21 @@ class MessageBubble(QFrame):
     def _setup_ui(self, content: str) -> None:
         """Set up the bubble UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(
-            metrics.padding_large,
-            metrics.padding_medium,
-            metrics.padding_large,
-            metrics.padding_medium,
-        )
-        layout.setSpacing(4)
+        # Minimal padding - let text breathe without heavy chrome
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(2)
 
-        # Role label
+        # Role label - subtle, small
         role_text = "You" if self.role == "user" else "Assistant"
         role_label = QLabel(role_text)
         role_label.setStyleSheet(f"""
             QLabel {{
-                color: {theme.text_secondary};
-                font-size: {metrics.font_small}px;
-                font-weight: 600;
+                color: {theme.text_muted};
+                font-size: 11px;
+                font-weight: 500;
                 font-family: {fonts.ui};
                 background: transparent;
+                padding-left: 2px;
             }}
         """)
         layout.addWidget(role_label)
@@ -147,7 +144,7 @@ class MessageBubble(QFrame):
         self.content_browser.setOpenLinks(False)  # Handle links manually
         self.content_browser.anchorClicked.connect(self._on_link_clicked)
 
-        # Style the text browser to look seamless
+        # Style the text browser - clean and minimal
         self.content_browser.setStyleSheet(f"""
             QTextBrowser {{
                 background-color: transparent;
@@ -156,6 +153,8 @@ class MessageBubble(QFrame):
                 font-size: {metrics.font_medium}px;
                 font-family: {fonts.chat};
                 selection-background-color: {theme.accent};
+                padding: 0;
+                margin: 0;
             }}
         """)
 
@@ -170,18 +169,25 @@ class MessageBubble(QFrame):
 
         layout.addWidget(self.content_browser)
 
-        # Style the bubble
+        # Minimal styling - no heavy bubbles
+        # User messages: very subtle left border accent
+        # Assistant messages: no decoration at all
         if self.role == "user":
-            bubble_color = theme.user_bubble
+            self.setStyleSheet(f"""
+                MessageBubble {{
+                    background-color: transparent;
+                    border-left: 2px solid {theme.accent};
+                    padding-left: 8px;
+                    margin-left: 4px;
+                }}
+            """)
         else:
-            bubble_color = theme.assistant_bubble
-
-        self.setStyleSheet(f"""
-            MessageBubble {{
-                background-color: {bubble_color};
-                border-radius: {metrics.radius_medium}px;
-            }}
-        """)
+            self.setStyleSheet("""
+                MessageBubble {
+                    background-color: transparent;
+                    border: none;
+                }
+            """)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
@@ -291,13 +297,9 @@ class ChatPanel(QWidget):
             }}
         """)
         self.messages_layout = QVBoxLayout(self.messages_container)
-        self.messages_layout.setContentsMargins(
-            metrics.padding_xlarge,
-            metrics.padding_large,
-            metrics.padding_xlarge,
-            metrics.padding_large,
-        )
-        self.messages_layout.setSpacing(metrics.padding_medium)
+        # Comfortable but not bloated margins
+        self.messages_layout.setContentsMargins(16, 12, 16, 12)
+        self.messages_layout.setSpacing(16)  # Space between messages
         self.messages_layout.addStretch()  # Push messages to top initially
 
         self.scroll_area.setWidget(self.messages_container)
@@ -357,6 +359,8 @@ class ChatPanel(QWidget):
                 font-size: {metrics.font_medium}px;
                 font-family: {fonts.chat};
                 selection-background-color: {theme.accent};
+                padding: 0;
+                margin: 0;
             }}
         """)
         self._add_bubble(bubble)
