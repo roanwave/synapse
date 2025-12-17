@@ -8,11 +8,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QFrame,
     QSizePolicy,
+    QTextBrowser,
 )
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, Property
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QDesktopServices
 
 from ..config.themes import theme, fonts, metrics
+from ..utils.markdown_renderer import render_markdown
 
 
 class TypingIndicator(QWidget):
@@ -110,6 +112,7 @@ class MessageBubble(QFrame):
         """
         super().__init__(parent)
         self.role = role
+        self._raw_content = content  # Store raw markdown
         self._typing_indicator: TypingIndicator | None = None
         self._setup_ui(content)
 
@@ -138,24 +141,34 @@ class MessageBubble(QFrame):
         """)
         layout.addWidget(role_label)
 
-        # Content label
-        self.content_label = QLabel(content)
-        self.content_label.setWordWrap(True)
-        self.content_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.content_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse |
-            Qt.TextInteractionFlag.TextSelectableByKeyboard
-        )
-        self.content_label.setStyleSheet(f"""
-            QLabel {{
+        # Content browser (supports HTML/markdown rendering)
+        self.content_browser = QTextBrowser()
+        self.content_browser.setOpenExternalLinks(True)
+        self.content_browser.setOpenLinks(False)  # Handle links manually
+        self.content_browser.anchorClicked.connect(self._on_link_clicked)
+
+        # Style the text browser to look seamless
+        self.content_browser.setStyleSheet(f"""
+            QTextBrowser {{
+                background-color: transparent;
+                border: none;
                 color: {theme.text_primary};
                 font-size: {metrics.font_medium}px;
                 font-family: {fonts.chat};
-                background: transparent;
-                line-height: 1.5;
+                selection-background-color: {theme.accent};
             }}
         """)
-        layout.addWidget(self.content_label)
+
+        # Make it auto-resize to content
+        self.content_browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.content_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.content_browser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        # Set content
+        if content:
+            self._render_content(content)
+
+        layout.addWidget(self.content_browser)
 
         # Style the bubble
         if self.role == "user":
@@ -172,22 +185,53 @@ class MessageBubble(QFrame):
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
+    def _render_content(self, content: str) -> None:
+        """Render markdown content as HTML.
+
+        Args:
+            content: Markdown text to render
+        """
+        html = render_markdown(content)
+        self.content_browser.setHtml(html)
+
+        # Adjust height to content
+        self.content_browser.document().setTextWidth(self.content_browser.viewport().width())
+        doc_height = self.content_browser.document().size().height()
+        self.content_browser.setMinimumHeight(int(doc_height) + 10)
+
+    def _on_link_clicked(self, url) -> None:
+        """Handle link clicks by opening in external browser.
+
+        Args:
+            url: The clicked URL
+        """
+        QDesktopServices.openUrl(url)
+
     def set_content(self, content: str) -> None:
         """Update the bubble content.
 
         Args:
-            content: New content text
+            content: New content text (markdown)
         """
-        self.content_label.setText(content)
+        self._raw_content = content
+        self._render_content(content)
 
     def append_content(self, text: str) -> None:
         """Append text to the bubble content.
 
         Args:
-            text: Text to append
+            text: Text to append (markdown)
         """
-        current = self.content_label.text()
-        self.content_label.setText(current + text)
+        self._raw_content += text
+        self._render_content(self._raw_content)
+
+    def get_raw_content(self) -> str:
+        """Get the raw markdown content.
+
+        Returns:
+            Raw markdown text
+        """
+        return self._raw_content
 
     def show_typing(self) -> None:
         """Show typing indicator."""
@@ -283,7 +327,7 @@ class ChatPanel(QWidget):
         """
         if self._current_assistant_bubble:
             # Hide typing on first content
-            if not self._current_assistant_bubble.content_label.text():
+            if not self._current_assistant_bubble._raw_content:
                 self._current_assistant_bubble.hide_typing()
             self._current_assistant_bubble.append_content(text)
             self._scroll_to_bottom()
@@ -304,13 +348,15 @@ class ChatPanel(QWidget):
         if self._current_assistant_bubble:
             self._current_assistant_bubble.hide_typing()
 
-        bubble = MessageBubble("assistant", f"Error: {error}")
-        bubble.content_label.setStyleSheet(f"""
-            QLabel {{
+        bubble = MessageBubble("assistant", f"**Error:** {error}")
+        bubble.content_browser.setStyleSheet(f"""
+            QTextBrowser {{
+                background-color: transparent;
+                border: none;
                 color: {theme.error};
                 font-size: {metrics.font_medium}px;
                 font-family: {fonts.chat};
-                background: transparent;
+                selection-background-color: {theme.accent};
             }}
         """)
         self._add_bubble(bubble)
