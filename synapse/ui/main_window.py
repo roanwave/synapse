@@ -1260,16 +1260,20 @@ class MainWindow(QMainWindow):
         started = session.started_at.strftime("%Y-%m-%d %H:%M")
         models = ", ".join(session.models_used) if session.models_used else "unknown"
         msg_count = len(session.messages) if session.messages else 0
-        header = f"Loaded session from {started} | {msg_count} messages | Models: {models}"
-        self.chat_panel.add_system_message(header)
 
-        # Load messages into chat panel AND prompt builder
-        if session.messages:
+        # Check if this is an old session with summary but no messages
+        has_messages = bool(session.messages)
+        has_summary = bool(session.summary_xml)
+
+        if has_messages:
+            # Normal case: load full message history
+            header = f"Loaded session from {started} | {msg_count} messages | Models: {models}"
+            self.chat_panel.add_system_message(header)
+
             for msg in session.messages:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
 
-                # Add to chat panel
                 if role == "user":
                     self.chat_panel.add_user_message(content)
                     self._prompt_builder.add_user_message(content)
@@ -1280,9 +1284,30 @@ class MainWindow(QMainWindow):
                     self.chat_panel.finish_assistant_message()
                     self._prompt_builder.add_assistant_message(content)
 
-        # Restore summary if present
-        if session.summary_xml:
+            # Also restore summary if present (for summarized older messages)
+            if has_summary:
+                self._prompt_builder.set_summary(session.summary_xml)
+
+            status_msg = f"Loaded session with {msg_count} messages - ready to continue"
+
+        elif has_summary:
+            # Old session with summary but no messages - inject summary as context
+            header = f"Loaded session from {started} | Models: {models}"
+            self.chat_panel.add_system_message(header)
+            self.chat_panel.add_system_message(
+                "[Session loaded from summary - original messages not available]"
+            )
+
+            # Inject summary into prompt builder as prior context
             self._prompt_builder.set_summary(session.summary_xml)
+
+            status_msg = "Loaded session from summary - ready to continue"
+
+        else:
+            # Empty session - nothing to load
+            header = f"Loaded empty session from {started} | Models: {models}"
+            self.chat_panel.add_system_message(header)
+            status_msg = "Loaded empty session"
 
         # Update context display
         self._update_token_count()
@@ -1295,10 +1320,7 @@ class MainWindow(QMainWindow):
         # Focus input for continuation
         self.input_panel.focus_input()
 
-        self.status_bar.showMessage(
-            f"Loaded session with {msg_count} messages - ready to continue",
-            3000
-        )
+        self.status_bar.showMessage(status_msg, 3000)
 
     def _on_menu_clear_documents(self) -> None:
         """Clear all indexed documents via menu."""
