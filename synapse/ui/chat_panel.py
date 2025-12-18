@@ -383,6 +383,29 @@ class ChatPanel(QWidget):
         scrollbar = self.scroll_area.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
+    def add_system_message(self, content: str) -> None:
+        """Add a system/info message to the chat.
+
+        Args:
+            content: Message text
+        """
+        bubble = MessageBubble("assistant", content)
+        # Style as a system message - muted appearance
+        bubble.content_browser.setStyleSheet(f"""
+            QTextBrowser {{
+                background-color: transparent;
+                border: none;
+                color: {theme.text_muted};
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.chat};
+                font-style: italic;
+                selection-background-color: {theme.accent};
+                padding: 0;
+                margin: 0;
+            }}
+        """)
+        self._add_bubble(bubble)
+
     def clear(self) -> None:
         """Clear all messages from the chat."""
         for bubble in self._bubbles:

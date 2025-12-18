@@ -711,3 +711,7 @@ class Sidebar(QWidget):
         """
         self._inspector_active = active
         self._update_inspector_button_style()
+
+    def clear_documents(self) -> None:
+        """Clear all documents from the document panel."""
+        self.document_panel.clear()

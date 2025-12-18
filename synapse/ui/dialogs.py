@@ -3,7 +3,7 @@
 Exit confirmation, artifact generation, help, and about dialogs.
 """
 
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, TYPE_CHECKING
 from enum import Enum
 
 from PySide6.QtWidgets import (
@@ -15,9 +15,15 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
     QWidget,
+    QListWidget,
+    QListWidgetItem,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
+
+if TYPE_CHECKING:
+    from ..storage.conversation_store import ConversationStore
+    from ..storage import SessionRecord
 
 from ..config.themes import theme, fonts, metrics
 
@@ -326,10 +332,11 @@ class HelpDialog(QDialog):
         # Shortcuts list
         shortcuts = [
             ("Ctrl+Enter", "Send message"),
+            ("Ctrl+N", "New conversation"),
+            ("Ctrl+S", "Save session"),
             ("Ctrl+M", "Set waypoint"),
             ("Ctrl+R", "Regenerate response"),
             ("Ctrl+I", "Toggle inspector"),
-            ("Ctrl+N", "New conversation"),
             ("Ctrl+F", "Toggle focus mode"),
             ("Escape", "Close panel / Exit focus"),
             ("F1", "Show this help"),
@@ -572,3 +579,257 @@ class NotificationToast(QLabel):
         # Simple hide for now (could add animation)
         self.hide()
         self.deleteLater()
+
+
+class SessionBrowserDialog(QDialog):
+    """Dialog for browsing and selecting past sessions."""
+
+    def __init__(
+        self,
+        conversation_store: "ConversationStore",
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        """Initialize the session browser dialog.
+
+        Args:
+            conversation_store: The conversation store to browse
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self._conversation_store = conversation_store
+        self._sessions: List = []
+        self._selected_session = None
+        self._setup_ui()
+        self._load_sessions()
+
+    def _setup_ui(self) -> None:
+        """Set up the dialog UI."""
+        self.setWindowTitle("Open Session")
+        self.setFixedSize(500, 400)
+        self.setModal(True)
+
+        self.setWindowFlags(
+            Qt.WindowType.Dialog |
+            Qt.WindowType.FramelessWindowHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        container = QFrame(self)
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: {theme.background};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_large}px;
+            }}
+        """)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(container)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(
+            metrics.padding_xlarge,
+            metrics.padding_xlarge,
+            metrics.padding_xlarge,
+            metrics.padding_large,
+        )
+        layout.setSpacing(metrics.padding_medium)
+
+        # Title
+        title = QLabel("Open Session")
+        title.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_primary};
+                font-size: 18px;
+                font-weight: 600;
+                font-family: {fonts.ui};
+            }}
+        """)
+        layout.addWidget(title)
+
+        # Description
+        desc = QLabel("Select a previous session to view:")
+        desc.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_secondary};
+                font-size: {metrics.font_normal}px;
+                font-family: {fonts.ui};
+            }}
+        """)
+        layout.addWidget(desc)
+
+        # Session list
+        self.session_list = QListWidget()
+        self.session_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {theme.background_secondary};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_medium}px;
+                font-size: {metrics.font_normal}px;
+                font-family: {fonts.ui};
+                padding: {metrics.padding_small}px;
+            }}
+            QListWidget::item {{
+                padding: {metrics.padding_medium}px;
+                border-radius: {metrics.radius_small}px;
+                margin: 2px 0;
+            }}
+            QListWidget::item:selected {{
+                background-color: {theme.accent};
+            }}
+            QListWidget::item:hover {{
+                background-color: {theme.background_tertiary};
+            }}
+        """)
+        self.session_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout.addWidget(self.session_list, stretch=1)
+
+        # Info label for selected session
+        self.info_label = QLabel("")
+        self.info_label.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_muted};
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.mono};
+            }}
+        """)
+        self.info_label.setWordWrap(True)
+        self.session_list.itemSelectionChanged.connect(self._on_selection_changed)
+        layout.addWidget(self.info_label)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(metrics.padding_small)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(self._secondary_button_style())
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        button_layout.addStretch()
+
+        open_btn = QPushButton("Open")
+        open_btn.setStyleSheet(self._primary_button_style())
+        open_btn.clicked.connect(self._on_open_clicked)
+        button_layout.addWidget(open_btn)
+
+        layout.addLayout(button_layout)
+
+    def _load_sessions(self) -> None:
+        """Load sessions from the conversation store."""
+        self._sessions = self._conversation_store.get_recent_sessions(limit=50)
+
+        if not self._sessions:
+            self.session_list.addItem("No saved sessions found")
+            self.session_list.item(0).setFlags(Qt.ItemFlag.NoItemFlags)
+            return
+
+        for session in self._sessions:
+            started = session.started_at.strftime("%Y-%m-%d %H:%M")
+            models = ", ".join(session.models_used[:2]) if session.models_used else "unknown"
+            if len(session.models_used) > 2:
+                models += f" +{len(session.models_used) - 2}"
+
+            item_text = f"{started} | {models} | {session.token_count:,} tokens"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, session.session_id)
+            self.session_list.addItem(item)
+
+    def _on_selection_changed(self) -> None:
+        """Handle session selection change."""
+        items = self.session_list.selectedItems()
+        if not items:
+            self.info_label.setText("")
+            return
+
+        session_id = items[0].data(Qt.ItemDataRole.UserRole)
+        session = next((s for s in self._sessions if s.session_id == session_id), None)
+
+        if session:
+            ended = session.ended_at.strftime("%H:%M") if session.ended_at else "?"
+            info = f"Session ID: {session.session_id[:8]}...\n"
+            info += f"Duration: {session.started_at.strftime('%H:%M')} - {ended}\n"
+            info += f"Drift events: {session.drift_events}"
+            if session.artifacts_generated:
+                info += f" | Artifacts: {', '.join(session.artifacts_generated)}"
+            self.info_label.setText(info)
+
+    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
+        """Handle double-click on item."""
+        session_id = item.data(Qt.ItemDataRole.UserRole)
+        if session_id:
+            self._selected_session = next(
+                (s for s in self._sessions if s.session_id == session_id), None
+            )
+            self.accept()
+
+    def _on_open_clicked(self) -> None:
+        """Handle open button click."""
+        items = self.session_list.selectedItems()
+        if items:
+            session_id = items[0].data(Qt.ItemDataRole.UserRole)
+            if session_id:
+                self._selected_session = next(
+                    (s for s in self._sessions if s.session_id == session_id), None
+                )
+                self.accept()
+
+    def get_selected_session(self):
+        """Get the selected session.
+
+        Returns:
+            SessionRecord if selected, None otherwise
+        """
+        return self._selected_session
+
+    def _primary_button_style(self) -> str:
+        """Get primary button stylesheet."""
+        return f"""
+            QPushButton {{
+                background-color: {theme.accent};
+                color: white;
+                border: none;
+                border-radius: {metrics.radius_medium}px;
+                padding: 10px 24px;
+                font-weight: 500;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.accent_hover};
+            }}
+            QPushButton:pressed {{
+                background-color: {theme.accent_pressed};
+            }}
+        """
+
+    def _secondary_button_style(self) -> str:
+        """Get secondary button stylesheet."""
+        return f"""
+            QPushButton {{
+                background-color: {theme.background_secondary};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_medium}px;
+                padding: 10px 24px;
+                font-weight: 500;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.border_subtle};
+                border-color: {theme.border};
+            }}
+            QPushButton:pressed {{
+                background-color: {theme.background_tertiary};
+            }}
+        """
+
+    def keyPressEvent(self, event) -> None:
+        """Handle key press - close on Escape."""
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)

@@ -11,15 +11,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QStatusBar,
     QLabel,
+    QMenuBar,
+    QMenu,
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QShortcut, QKeySequence
+from PySide6.QtGui import QShortcut, QKeySequence, QAction
 
 from .chat_panel import ChatPanel
 from .input_panel import InputPanel
 from .sidebar import Sidebar
 from .inspector import InspectorPanel
-from .dialogs import ExitDialog, ExitAction, HelpDialog, NotificationToast
+from .dialogs import ExitDialog, ExitAction, HelpDialog, AboutDialog, SessionBrowserDialog, NotificationToast
 from ..config.settings import settings
 from ..config.models import MODELS, get_model, get_available_models
 from ..config.themes import get_stylesheet, theme, fonts, metrics
@@ -103,6 +105,9 @@ class MainWindow(QMainWindow):
 
         # Apply stylesheet
         self.setStyleSheet(get_stylesheet())
+
+        # Set up menu bar
+        self._setup_menu_bar()
 
         # Central widget
         central_widget = QWidget()
@@ -231,6 +236,127 @@ class MainWindow(QMainWindow):
         # F1 - Show help dialog
         help_shortcut = QShortcut(QKeySequence("F1"), self)
         help_shortcut.activated.connect(self._on_show_help)
+
+        # Ctrl+S - Save session
+        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        save_shortcut.activated.connect(self._on_save_session)
+
+    def _setup_menu_bar(self) -> None:
+        """Set up the main menu bar."""
+        menu_bar = self.menuBar()
+
+        # Style the menu bar to match dark theme
+        menu_bar.setStyleSheet(f"""
+            QMenuBar {{
+                background-color: #1E1E1E;
+                color: #F0F0F0;
+                border-bottom: 1px solid {theme.border};
+                padding: 2px 0;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QMenuBar::item {{
+                padding: 4px 12px;
+                background-color: transparent;
+            }}
+            QMenuBar::item:selected {{
+                background-color: {theme.background_secondary};
+            }}
+            QMenuBar::item:pressed {{
+                background-color: {theme.accent};
+            }}
+            QMenu {{
+                background-color: #1E1E1E;
+                color: #F0F0F0;
+                border: 1px solid {theme.border};
+                padding: 4px 0;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QMenu::item {{
+                padding: 6px 24px 6px 12px;
+            }}
+            QMenu::item:selected {{
+                background-color: {theme.accent};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background-color: {theme.border};
+                margin: 4px 8px;
+            }}
+        """)
+
+        # === File Menu ===
+        file_menu = menu_bar.addMenu("&File")
+
+        new_action = QAction("&New Chat", self)
+        new_action.setShortcut("Ctrl+N")
+        new_action.triggered.connect(self._on_new_conversation)
+        file_menu.addAction(new_action)
+
+        open_action = QAction("&Open Session...", self)
+        open_action.triggered.connect(self._on_open_session)
+        file_menu.addAction(open_action)
+
+        save_action = QAction("&Save Session", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self._on_save_session)
+        file_menu.addAction(save_action)
+
+        file_menu.addSeparator()
+
+        exit_action = QAction("E&xit", self)
+        exit_action.setShortcut("Alt+F4")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        # === Edit Menu ===
+        edit_menu = menu_bar.addMenu("&Edit")
+
+        clear_docs_action = QAction("Clear &Documents", self)
+        clear_docs_action.triggered.connect(self._on_menu_clear_documents)
+        edit_menu.addAction(clear_docs_action)
+
+        edit_menu.addSeparator()
+
+        waypoint_action = QAction("Set &Waypoint", self)
+        waypoint_action.setShortcut("Ctrl+M")
+        waypoint_action.triggered.connect(self._on_set_waypoint)
+        edit_menu.addAction(waypoint_action)
+
+        regenerate_action = QAction("&Regenerate Response", self)
+        regenerate_action.setShortcut("Ctrl+R")
+        regenerate_action.triggered.connect(self._on_regenerate_requested)
+        edit_menu.addAction(regenerate_action)
+
+        # === View Menu ===
+        view_menu = menu_bar.addMenu("&View")
+
+        focus_action = QAction("&Focus Mode", self)
+        focus_action.setShortcut("Ctrl+F")
+        focus_action.triggered.connect(self._on_toggle_focus_mode)
+        view_menu.addAction(focus_action)
+
+        inspector_action = QAction("Prompt &Inspector", self)
+        inspector_action.setShortcut("Ctrl+I")
+        inspector_action.triggered.connect(self._on_toggle_inspector)
+        view_menu.addAction(inspector_action)
+
+        sidebar_action = QAction("Toggle &Sidebar", self)
+        sidebar_action.triggered.connect(self._on_toggle_sidebar)
+        view_menu.addAction(sidebar_action)
+
+        # === Help Menu ===
+        help_menu = menu_bar.addMenu("&Help")
+
+        shortcuts_action = QAction("&Keyboard Shortcuts", self)
+        shortcuts_action.setShortcut("F1")
+        shortcuts_action.triggered.connect(self._on_show_help)
+        help_menu.addAction(shortcuts_action)
+
+        about_action = QAction("&About Synapse", self)
+        about_action.triggered.connect(self._on_show_about)
+        help_menu.addAction(about_action)
 
     def _setup_default_model(self) -> None:
         """Set up the default model."""
@@ -1081,3 +1207,59 @@ class MainWindow(QMainWindow):
         """Show the help dialog with keyboard shortcuts."""
         dialog = HelpDialog(self)
         dialog.exec()
+
+    def _on_show_about(self) -> None:
+        """Show the about dialog."""
+        dialog = AboutDialog(self)
+        dialog.exec()
+
+    def _on_save_session(self) -> None:
+        """Save the current session immediately."""
+        if self._prompt_builder.get_message_count() == 0:
+            self.status_bar.showMessage("No conversation to save", 2000)
+            return
+
+        self._save_session_data()
+        self.status_bar.showMessage("Session saved", 2000)
+
+    def _on_open_session(self) -> None:
+        """Open the session browser dialog."""
+        dialog = SessionBrowserDialog(self._conversation_store, self)
+        if dialog.exec():
+            session = dialog.get_selected_session()
+            if session:
+                self._load_session_replay(session)
+
+    def _load_session_replay(self, session) -> None:
+        """Load a session as read-only replay in chat panel.
+
+        Args:
+            session: SessionRecord to replay
+        """
+        # Clear current chat
+        self.chat_panel.clear()
+
+        # Show session header
+        started = session.started_at.strftime("%Y-%m-%d %H:%M")
+        models = ", ".join(session.models_used) if session.models_used else "unknown"
+        header = f"Session from {started} | Models: {models}"
+
+        self.chat_panel.add_system_message(f"[Session Replay] {header}")
+
+        # Show summary if available
+        if session.summary_xml:
+            self.chat_panel.add_system_message(
+                f"Summary:\n{session.summary_xml}"
+            )
+
+        self.status_bar.showMessage(f"Loaded session: {session.session_id[:8]}...", 3000)
+
+    def _on_menu_clear_documents(self) -> None:
+        """Clear all indexed documents via menu."""
+        # Trigger same action as sidebar "Clear All" button
+        self._on_documents_cleared()
+        self.sidebar.clear_documents()
+
+    def _on_toggle_sidebar(self) -> None:
+        """Toggle sidebar visibility (same as focus mode)."""
+        self._on_toggle_focus_mode()
