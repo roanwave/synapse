@@ -1051,6 +1051,12 @@ class MainWindow(QMainWindow):
         # Get waypoints
         self._session_record.waypoints = self._waypoint_manager.get_waypoints_for_archive()
 
+        # Save all conversation messages
+        self._session_record.messages = [
+            {"role": msg.role, "content": msg.content}
+            for msg in self._prompt_builder.history.messages
+        ]
+
         # Save to conversation store
         self._conversation_store.save_session(self._session_record)
 
@@ -1231,28 +1237,68 @@ class MainWindow(QMainWindow):
                 self._load_session_replay(session)
 
     def _load_session_replay(self, session) -> None:
-        """Load a session as read-only replay in chat panel.
+        """Load a session and restore conversation for continuation.
 
         Args:
-            session: SessionRecord to replay
+            session: SessionRecord to load
         """
-        # Clear current chat
+        # Save current session if there's content
+        if self._prompt_builder.get_message_count() > 0:
+            self._save_session_data()
+
+        # Clear current state
         self.chat_panel.clear()
+        self._prompt_builder = PromptBuilder()
+        self._intent_tracker = IntentTracker()
+        self._waypoint_manager = WaypointManager()
+        self._drift_detector = DriftDetector()
+
+        # Create new session record (this is a continuation, new session ID)
+        self._session_record = SessionRecord.create()
 
         # Show session header
         started = session.started_at.strftime("%Y-%m-%d %H:%M")
         models = ", ".join(session.models_used) if session.models_used else "unknown"
-        header = f"Session from {started} | Models: {models}"
+        msg_count = len(session.messages) if session.messages else 0
+        header = f"Loaded session from {started} | {msg_count} messages | Models: {models}"
+        self.chat_panel.add_system_message(header)
 
-        self.chat_panel.add_system_message(f"[Session Replay] {header}")
+        # Load messages into chat panel AND prompt builder
+        if session.messages:
+            for msg in session.messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
 
-        # Show summary if available
+                # Add to chat panel
+                if role == "user":
+                    self.chat_panel.add_user_message(content)
+                    self._prompt_builder.add_user_message(content)
+                elif role == "assistant":
+                    # Add assistant message directly (not through streaming)
+                    self.chat_panel.start_assistant_message()
+                    self.chat_panel.append_to_assistant_message(content)
+                    self.chat_panel.finish_assistant_message()
+                    self._prompt_builder.add_assistant_message(content)
+
+        # Restore summary if present
         if session.summary_xml:
-            self.chat_panel.add_system_message(
-                f"Summary:\n{session.summary_xml}"
-            )
+            self._prompt_builder.set_summary(session.summary_xml)
 
-        self.status_bar.showMessage(f"Loaded session: {session.session_id[:8]}...", 3000)
+        # Update context display
+        self._update_token_count()
+
+        # Enable regenerate if we have messages
+        self.sidebar.set_regenerate_enabled(
+            self._prompt_builder.get_message_count() > 0
+        )
+
+        # Focus input for continuation
+        self.input_panel.focus_input()
+
+        self.status_bar.showMessage(
+            f"Loaded session with {msg_count} messages - ready to continue",
+            3000
+        )
 
     def _on_menu_clear_documents(self) -> None:
         """Clear all indexed documents via menu."""

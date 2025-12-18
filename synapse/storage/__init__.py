@@ -166,6 +166,7 @@ class SessionRecord:
     drift_events: int = 0
     waypoints: List[Dict[str, Any]] = field(default_factory=list)
     artifacts_generated: List[str] = field(default_factory=list)
+    messages: List[Dict[str, str]] = field(default_factory=list)
 
     @classmethod
     def create(cls) -> "SessionRecord":
@@ -191,6 +192,7 @@ class SessionRecord:
             "drift_events": self.drift_events,
             "waypoints": self.waypoints,
             "artifacts_generated": self.artifacts_generated,
+            "messages": self.messages,
         }
 
 

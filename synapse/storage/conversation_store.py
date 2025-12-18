@@ -208,6 +208,7 @@ class ConversationStore:
             drift_events=data.get("drift_events", 0),
             waypoints=data.get("waypoints", []),
             artifacts_generated=data.get("artifacts_generated", []),
+            messages=data.get("messages", []),
         )
 
     def _rewrite_sessions(self, sessions: List[SessionRecord]) -> None:
