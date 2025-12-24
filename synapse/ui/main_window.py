@@ -533,25 +533,60 @@ class MainWindow(QMainWindow):
         if drift_result.is_drift and self._context_manager:
             self._context_manager.signal_drift_detected()
 
-        # Check for YouTube URLs and fetch transcript
+        # Check for YouTube URLs - fetch async if found
         self._prompt_builder.clear_youtube_context()
         if contains_youtube_url(message):
             video_id = extract_video_id(message)
             if video_id:
+                # Fetch transcript asynchronously to avoid blocking UI
                 self.status_bar.showMessage("Fetching YouTube transcript...", 0)
-                transcript, error = fetch_transcript(video_id)
-                if transcript:
-                    # Add transcript to context
-                    context_block = transcript.to_context_block()
-                    self._prompt_builder.set_youtube_context(context_block)
-                    token_estimate = estimate_transcript_tokens(transcript)
-                    self.status_bar.showMessage(
-                        f"YouTube transcript loaded ({transcript.duration_formatted}, ~{token_estimate} tokens)",
-                        3000
-                    )
-                elif error:
-                    self.status_bar.showMessage(f"YouTube: {error}", 5000)
+                self.input_panel.set_enabled(False)
+                asyncio.ensure_future(self._fetch_youtube_and_send(video_id, message))
+                return
 
+        # No YouTube URL - proceed normally
+        self._continue_message_submission(message)
+
+    async def _fetch_youtube_and_send(self, video_id: str, message: str) -> None:
+        """Fetch YouTube transcript asynchronously and then send message.
+
+        Args:
+            video_id: YouTube video ID
+            message: The user's message
+        """
+        try:
+            # Run fetch in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            transcript, error = await loop.run_in_executor(
+                None,
+                fetch_transcript,
+                video_id
+            )
+
+            if transcript:
+                # Add transcript to context
+                context_block = transcript.to_context_block()
+                self._prompt_builder.set_youtube_context(context_block)
+                token_estimate = estimate_transcript_tokens(transcript)
+                self.status_bar.showMessage(
+                    f"YouTube transcript loaded ({transcript.duration_formatted}, ~{token_estimate} tokens)",
+                    3000
+                )
+            elif error:
+                self.status_bar.showMessage(f"YouTube: {error}", 5000)
+
+        except Exception as e:
+            self.status_bar.showMessage(f"YouTube fetch error: {str(e)}", 5000)
+
+        # Continue with message submission
+        self._continue_message_submission(message)
+
+    def _continue_message_submission(self, message: str) -> None:
+        """Continue message submission after optional YouTube fetch.
+
+        Args:
+            message: The user's message
+        """
         # Add user message to UI and history
         self.chat_panel.add_user_message(message)
         self._prompt_builder.add_user_message(message)
