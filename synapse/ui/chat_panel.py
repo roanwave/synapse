@@ -841,3 +841,61 @@ class ChatPanel(QWidget):
             Number of messages
         """
         return self._next_message_index
+
+    def remove_last_assistant_message(self) -> Optional[str]:
+        """Remove the last assistant message bubble.
+
+        Returns:
+            The content of the removed message, or None if no message found
+        """
+        # Find and remove the last assistant bubble
+        for bubble in reversed(self._bubbles):
+            if bubble.role == "assistant":
+                content = bubble._raw_content
+                bubble.deleteLater()
+                self._bubbles.remove(bubble)
+                if bubble in self._message_indices:
+                    del self._message_indices[bubble]
+                return content
+        return None
+
+    def remove_last_exchange(self) -> bool:
+        """Remove the last user-assistant message exchange.
+
+        Returns:
+            True if exchange was removed, False otherwise
+        """
+        # Find last assistant
+        assistant_bubble = None
+        user_bubble = None
+
+        for bubble in reversed(self._bubbles):
+            if bubble.role == "assistant" and assistant_bubble is None:
+                assistant_bubble = bubble
+            elif bubble.role == "user" and assistant_bubble is not None:
+                user_bubble = bubble
+                break
+
+        if assistant_bubble and user_bubble:
+            # Remove both
+            assistant_bubble.deleteLater()
+            user_bubble.deleteLater()
+            self._bubbles.remove(assistant_bubble)
+            self._bubbles.remove(user_bubble)
+            if assistant_bubble in self._message_indices:
+                del self._message_indices[assistant_bubble]
+            if user_bubble in self._message_indices:
+                del self._message_indices[user_bubble]
+            return True
+
+        return False
+
+    def get_current_assistant_content(self) -> Optional[str]:
+        """Get the content of the currently streaming assistant message.
+
+        Returns:
+            Current content or None if not streaming
+        """
+        if self._current_assistant_bubble:
+            return self._current_assistant_bubble._raw_content
+        return None

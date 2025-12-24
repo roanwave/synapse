@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         self._drift_detector = DriftDetector()
         self._artifact_generator = ArtifactGenerator()
         self._is_streaming = False
+        self._interrupt_requested = False
         self._summarization_in_progress = False
         self._focus_mode = False
 
@@ -297,6 +298,14 @@ class MainWindow(QMainWindow):
         side_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
         side_shortcut.activated.connect(self._on_toggle_side_panel)
 
+        # ESC - Interrupt generation
+        interrupt_shortcut = QShortcut(QKeySequence("Escape"), self)
+        interrupt_shortcut.activated.connect(self._on_interrupt_generation)
+
+        # Ctrl+Z - Rollback last exchange
+        rollback_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
+        rollback_shortcut.activated.connect(self._on_rollback_last_exchange)
+
     def _setup_menu_bar(self) -> None:
         """Set up the premium main menu bar."""
         menu_bar = self.menuBar()
@@ -403,6 +412,13 @@ class MainWindow(QMainWindow):
         search_action.setShortcut("Ctrl+Shift+F")
         search_action.triggered.connect(self._on_search_conversations)
         edit_menu.addAction(search_action)
+
+        edit_menu.addSeparator()
+
+        rollback_action = QAction("&Rollback Last Exchange", self)
+        rollback_action.setShortcut("Ctrl+Z")
+        rollback_action.triggered.connect(self._on_rollback_last_exchange)
+        edit_menu.addAction(rollback_action)
 
         # === View Menu ===
         view_menu = menu_bar.addMenu("&View")
@@ -740,6 +756,10 @@ class MainWindow(QMainWindow):
             system = self._prompt_builder.get_system_prompt()
 
             async for chunk in self._adapter.stream(messages, system):
+                # Check for interrupt request
+                if self._interrupt_requested:
+                    break
+
                 if chunk.text:
                     full_response += chunk.text
                     self.chat_panel.append_to_assistant_message(chunk.text)
@@ -752,18 +772,35 @@ class MainWindow(QMainWindow):
                         5000
                     )
 
-            # Add complete response to history
-            self._prompt_builder.add_assistant_message(full_response)
-            self.chat_panel.finish_assistant_message()
+            # Check if we were interrupted
+            if self._interrupt_requested:
+                self._interrupt_requested = False
+                # Handle partial response
+                if full_response.strip():
+                    # Keep partial response
+                    self._prompt_builder.add_assistant_message(full_response)
+                    self.chat_panel.finish_assistant_message()
+                    self.status_bar.showMessage("Generation interrupted - partial response kept", 3000)
+                else:
+                    # Discard empty response
+                    self.chat_panel.remove_last_assistant_message()
+                    # Also remove the user message we just added
+                    self._prompt_builder.history.remove_last_exchange()
+                    self.chat_panel.remove_last_exchange()
+                    self.status_bar.showMessage("Generation interrupted - no content", 3000)
+            else:
+                # Add complete response to history
+                self._prompt_builder.add_assistant_message(full_response)
+                self.chat_panel.finish_assistant_message()
 
-            # Analyze completed response for TOC entry
-            if assistant_msg_index >= 0:
-                toc_entry = self._toc_generator.analyze_message(
-                    full_response, "assistant", assistant_msg_index
-                )
-                if toc_entry:
-                    self.sidebar.add_toc_entry(toc_entry)
-                self.sidebar.set_toc_current_index(assistant_msg_index)
+                # Analyze completed response for TOC entry
+                if assistant_msg_index >= 0:
+                    toc_entry = self._toc_generator.analyze_message(
+                        full_response, "assistant", assistant_msg_index
+                    )
+                    if toc_entry:
+                        self.sidebar.add_toc_entry(toc_entry)
+                    self.sidebar.set_toc_current_index(assistant_msg_index)
 
         except Exception as e:
             error_msg = str(e)
@@ -1959,3 +1996,36 @@ class MainWindow(QMainWindow):
         """Update the scratchpad context in the prompt builder."""
         content = self._scratchpad_panel.get_content()
         self._prompt_builder.set_scratchpad(content)
+
+    def _on_interrupt_generation(self) -> None:
+        """Handle interrupt request (ESC key)."""
+        if self._is_streaming:
+            self._interrupt_requested = True
+            self.status_bar.showMessage("Interrupting generation...", 1000)
+        elif self._side_streaming:
+            # Also handle side panel streaming
+            self._side_streaming = False
+            if self._side_panel:
+                self._side_panel.set_input_enabled(True)
+            self.status_bar.showMessage("Side panel interrupted", 1000)
+
+    def _on_rollback_last_exchange(self) -> None:
+        """Handle rollback request (Ctrl+Z)."""
+        if self._is_streaming:
+            self.status_bar.showMessage("Cannot rollback during generation", 2000)
+            return
+
+        # Try to remove last exchange from history
+        removed = self._prompt_builder.history.remove_last_exchange()
+        if removed:
+            # Remove from UI
+            self.chat_panel.remove_last_exchange()
+            self._update_token_count()
+            self.status_bar.showMessage("Rolled back last exchange", 2000)
+
+            # Update regenerate button state
+            self.sidebar.set_regenerate_enabled(
+                self._prompt_builder.get_message_count() > 0
+            )
+        else:
+            self.status_bar.showMessage("Nothing to rollback", 2000)
