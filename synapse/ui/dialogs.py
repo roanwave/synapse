@@ -834,3 +834,228 @@ class SessionBrowserDialog(QDialog):
             self.reject()
         else:
             super().keyPressEvent(event)
+
+
+class SummaryViewerDialog(QDialog):
+    """Dialog for viewing XML session summaries."""
+
+    def __init__(
+        self,
+        summary_xml: str,
+        session_id: str = "",
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        """Initialize the summary viewer dialog.
+
+        Args:
+            summary_xml: The XML summary content
+            session_id: Optional session ID for display
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self._summary_xml = summary_xml
+        self._session_id = session_id
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """Set up the dialog UI."""
+        self.setWindowTitle("Session Summary")
+        self.setMinimumSize(600, 500)
+        self.setModal(True)
+
+        self.setWindowFlags(
+            Qt.WindowType.Dialog |
+            Qt.WindowType.FramelessWindowHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        container = QFrame(self)
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: {theme.background_secondary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_large}px;
+            }}
+        """)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(container)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(
+            metrics.padding_xlarge,
+            metrics.padding_xlarge,
+            metrics.padding_xlarge,
+            metrics.padding_large,
+        )
+        layout.setSpacing(metrics.padding_medium)
+
+        # Header
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(metrics.padding_medium)
+
+        title = QLabel("Session Summary")
+        title.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_primary};
+                font-size: 18px;
+                font-weight: 600;
+                font-family: {fonts.ui};
+            }}
+        """)
+        header_layout.addWidget(title)
+
+        if self._session_id:
+            session_label = QLabel(f"({self._session_id[:8]}...)")
+            session_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {theme.text_muted};
+                    font-size: {metrics.font_small}px;
+                    font-family: {fonts.mono};
+                }}
+            """)
+            header_layout.addWidget(session_label)
+
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+
+        # XML content display
+        from PySide6.QtWidgets import QTextEdit
+        self.content_display = QTextEdit()
+        self.content_display.setReadOnly(True)
+        self.content_display.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {theme.code_bg};
+                color: {theme.text_primary};
+                border: 1px solid {theme.code_border};
+                border-radius: {metrics.radius_medium}px;
+                padding: {metrics.padding_medium}px;
+                font-family: {fonts.mono};
+                font-size: 13px;
+            }}
+        """)
+
+        # Format and display the XML with syntax highlighting
+        formatted_xml = self._format_xml(self._summary_xml)
+        self.content_display.setHtml(formatted_xml)
+        layout.addWidget(self.content_display, stretch=1)
+
+        # Copy button
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        copy_btn = QPushButton("Copy to Clipboard")
+        copy_btn.setStyleSheet(self._secondary_button_style())
+        copy_btn.clicked.connect(self._on_copy)
+        button_layout.addWidget(copy_btn)
+
+        close_btn = QPushButton("Close")
+        close_btn.setStyleSheet(self._primary_button_style())
+        close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(close_btn)
+
+        layout.addLayout(button_layout)
+
+    def _format_xml(self, xml_text: str) -> str:
+        """Format XML with syntax highlighting.
+
+        Args:
+            xml_text: Raw XML text
+
+        Returns:
+            HTML with syntax highlighting
+        """
+        import html
+
+        # Escape HTML entities first
+        escaped = html.escape(xml_text)
+
+        # Add colors for XML elements
+        # Tags in accent color
+        import re
+        highlighted = re.sub(
+            r'(&lt;/?)([\w]+)',
+            f'<span style="color: {theme.accent};">\\1\\2</span>',
+            escaped
+        )
+        # Close tags
+        highlighted = re.sub(
+            r'(&gt;)',
+            f'<span style="color: {theme.accent};">\\1</span>',
+            highlighted
+        )
+
+        return f"""
+        <pre style="
+            font-family: {fonts.mono};
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        ">{highlighted}</pre>
+        """
+
+    def _on_copy(self) -> None:
+        """Copy XML to clipboard."""
+        from PySide6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self._summary_xml)
+
+        # Brief feedback
+        sender = self.sender()
+        if sender:
+            original_text = sender.text()
+            sender.setText("Copied!")
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, lambda: sender.setText(original_text))
+
+    def _primary_button_style(self) -> str:
+        """Get primary button stylesheet."""
+        return f"""
+            QPushButton {{
+                background-color: {theme.accent};
+                color: white;
+                border: none;
+                border-radius: {metrics.radius_medium}px;
+                padding: 10px 24px;
+                font-weight: 500;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.accent_hover};
+            }}
+            QPushButton:pressed {{
+                background-color: {theme.accent_pressed};
+            }}
+        """
+
+    def _secondary_button_style(self) -> str:
+        """Get secondary button stylesheet."""
+        return f"""
+            QPushButton {{
+                background-color: {theme.background_secondary};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_medium}px;
+                padding: 10px 24px;
+                font-weight: 500;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.border_subtle};
+                border-color: {theme.border};
+            }}
+            QPushButton:pressed {{
+                background-color: {theme.background_tertiary};
+            }}
+        """
+
+    def keyPressEvent(self, event) -> None:
+        """Handle key press - close on Escape."""
+        if event.key() == Qt.Key.Key_Escape:
+            self.accept()
+        else:
+            super().keyPressEvent(event)

@@ -22,7 +22,7 @@ from .chat_panel import ChatPanel
 from .input_panel import InputPanel
 from .sidebar import Sidebar
 from .inspector import InspectorPanel
-from .dialogs import ExitDialog, ExitAction, HelpDialog, AboutDialog, SessionBrowserDialog, NotificationToast
+from .dialogs import ExitDialog, ExitAction, HelpDialog, AboutDialog, SessionBrowserDialog, NotificationToast, SummaryViewerDialog
 from ..config.settings import settings
 from ..config.models import MODELS, get_model, get_available_models
 from ..config.themes import get_stylesheet, theme, fonts, metrics
@@ -90,6 +90,7 @@ class MainWindow(QMainWindow):
         self._conversation_store = ConversationStore(
             settings.conversations_dir / "sessions.jsonl"
         )
+        self._loaded_session_summary: Optional[str] = None  # Summary from loaded session
 
         self._setup_ui()
         self._setup_shortcuts()
@@ -371,6 +372,12 @@ class MainWindow(QMainWindow):
         sidebar_action = QAction("Toggle &Sidebar", self)
         sidebar_action.triggered.connect(self._on_toggle_sidebar)
         view_menu.addAction(sidebar_action)
+
+        view_menu.addSeparator()
+
+        summary_action = QAction("View Session &Summary", self)
+        summary_action.triggered.connect(self._on_view_summary)
+        view_menu.addAction(summary_action)
 
         # === Help Menu ===
         help_menu = menu_bar.addMenu("&Help")
@@ -1428,3 +1435,30 @@ class MainWindow(QMainWindow):
     def _on_toggle_sidebar(self) -> None:
         """Toggle sidebar visibility (same as focus mode)."""
         self._on_toggle_focus_mode()
+
+    def _on_view_summary(self) -> None:
+        """View the current session's XML summary."""
+        # Check if we have a summary from prompt builder
+        summary_xml = None
+
+        # Check if current session has been summarized
+        if hasattr(self._prompt_builder, '_summary_block') and self._prompt_builder._summary_block:
+            # Extract just the XML part from the summary block
+            summary_xml = self._prompt_builder._summary_block
+        elif self._loaded_session_summary:
+            # Use loaded session's summary
+            summary_xml = self._loaded_session_summary
+
+        if not summary_xml:
+            self.status_bar.showMessage(
+                "No summary available (context not yet compressed)",
+                3000
+            )
+            return
+
+        dialog = SummaryViewerDialog(
+            summary_xml=summary_xml,
+            session_id=self._session_record.session_id if self._session_record else "",
+            parent=self
+        )
+        dialog.exec()
