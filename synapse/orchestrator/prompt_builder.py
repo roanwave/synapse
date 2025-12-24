@@ -159,6 +159,7 @@ class PromptBuilder:
         self._summary_block: Optional[str] = None
         self._rag_context: Optional[str] = None
         self._rag_chunks: List[Dict[str, Any]] = []  # For inspector
+        self._youtube_context: Optional[str] = None
         self._intent_hint: Optional[str] = None
 
     def set_summary(self, xml_summary: str) -> None:
@@ -237,6 +238,18 @@ class PromptBuilder:
         self._rag_context = None
         self._rag_chunks = []
 
+    def set_youtube_context(self, context_block: str) -> None:
+        """Set YouTube transcript context.
+
+        Args:
+            context_block: The formatted YouTube transcript block
+        """
+        self._youtube_context = context_block
+
+    def clear_youtube_context(self) -> None:
+        """Clear the YouTube context."""
+        self._youtube_context = None
+
     def get_rag_chunks(self) -> List[Dict[str, Any]]:
         """Get the current RAG chunks for inspection.
 
@@ -272,7 +285,8 @@ class PromptBuilder:
         1. Base system prompt
         2. Summary block (if present)
         3. RAG context (if present)
-        4. Intent hint (if present)
+        4. YouTube context (if present)
+        5. Intent hint (if present)
 
         Returns:
             The complete system prompt string
@@ -286,6 +300,10 @@ class PromptBuilder:
         if self._rag_context:
             parts.append("")
             parts.append(self._rag_context)
+
+        if self._youtube_context:
+            parts.append("")
+            parts.append(self._youtube_context)
 
         if self._intent_hint:
             parts.append("")
@@ -418,9 +436,10 @@ class PromptBuilder:
         return msg.content if msg else None
 
     def clear_history(self) -> None:
-        """Clear the conversation history, summary, and RAG context."""
+        """Clear the conversation history, summary, and all context."""
         self.history.clear()
         self._summary_block = None
         self._rag_context = None
         self._rag_chunks = []
+        self._youtube_context = None
         self._intent_hint = None

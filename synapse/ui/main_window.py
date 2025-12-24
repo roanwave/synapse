@@ -39,6 +39,12 @@ from ..llm.openai_adapter import OpenAIAdapter
 from ..llm.openrouter_adapter import OpenRouterAdapter
 from ..llm.gabai_adapter import GabAIAdapter
 from ..utils.token_counter import TokenCounter
+from ..utils.youtube_handler import (
+    contains_youtube_url,
+    extract_video_id,
+    fetch_transcript,
+    estimate_transcript_tokens,
+)
 from ..storage import SessionRecord
 from ..storage.vector_store_client import FAISSVectorStore
 from ..storage.bm25_client import BM25Client, reciprocal_rank_fusion
@@ -500,6 +506,25 @@ class MainWindow(QMainWindow):
         drift_result = self._drift_detector.analyze_message(message)
         if drift_result.is_drift and self._context_manager:
             self._context_manager.signal_drift_detected()
+
+        # Check for YouTube URLs and fetch transcript
+        self._prompt_builder.clear_youtube_context()
+        if contains_youtube_url(message):
+            video_id = extract_video_id(message)
+            if video_id:
+                self.status_bar.showMessage("Fetching YouTube transcript...", 0)
+                transcript, error = fetch_transcript(video_id)
+                if transcript:
+                    # Add transcript to context
+                    context_block = transcript.to_context_block()
+                    self._prompt_builder.set_youtube_context(context_block)
+                    token_estimate = estimate_transcript_tokens(transcript)
+                    self.status_bar.showMessage(
+                        f"YouTube transcript loaded ({transcript.duration_formatted}, ~{token_estimate} tokens)",
+                        3000
+                    )
+                elif error:
+                    self.status_bar.showMessage(f"YouTube: {error}", 5000)
 
         # Add user message to UI and history
         self.chat_panel.add_user_message(message)
