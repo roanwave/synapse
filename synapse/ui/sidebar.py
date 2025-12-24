@@ -21,6 +21,8 @@ from PySide6.QtCore import Qt, Signal
 
 from ..config.themes import theme, fonts, metrics
 from ..config.models import MODELS, get_available_models, ModelConfig
+from ..orchestrator.toc_generator import TOCEntry
+from .toc_panel import TOCPanel
 
 
 class ModelSelector(QFrame):
@@ -548,6 +550,7 @@ class Sidebar(QWidget):
     document_removed = Signal(str)  # Emits doc_id
     documents_cleared = Signal()  # Emits when all documents cleared
     inspector_toggled = Signal(bool)  # Emits visibility state
+    jump_to_message = Signal(int)  # Emits message_index for TOC navigation
 
     def __init__(self, parent: QWidget | None = None):
         """Initialize the sidebar.
@@ -584,6 +587,11 @@ class Sidebar(QWidget):
         self.document_panel.document_removed.connect(self.document_removed)
         self.document_panel.documents_cleared.connect(self.documents_cleared)
         layout.addWidget(self.document_panel)
+
+        # Table of Contents panel
+        self.toc_panel = TOCPanel()
+        self.toc_panel.jump_to_message.connect(self.jump_to_message)
+        layout.addWidget(self.toc_panel, stretch=1)
 
         # Regenerate button - secondary style
         self.regenerate_button = QPushButton("Regenerate")
@@ -734,3 +742,31 @@ class Sidebar(QWidget):
     def clear_documents(self) -> None:
         """Clear all documents from the document panel."""
         self.document_panel.clear()
+
+    def set_toc_entries(self, entries: List[TOCEntry]) -> None:
+        """Set the TOC entries.
+
+        Args:
+            entries: List of TOC entries
+        """
+        self.toc_panel.set_entries(entries)
+
+    def add_toc_entry(self, entry: TOCEntry) -> None:
+        """Add a single TOC entry.
+
+        Args:
+            entry: The entry to add
+        """
+        self.toc_panel.add_entry(entry)
+
+    def set_toc_current_index(self, message_index: int) -> None:
+        """Set the current message index for TOC highlighting.
+
+        Args:
+            message_index: Current message index
+        """
+        self.toc_panel.set_current_index(message_index)
+
+    def clear_toc(self) -> None:
+        """Clear the TOC panel."""
+        self.toc_panel.clear()

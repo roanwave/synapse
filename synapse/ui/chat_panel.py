@@ -483,6 +483,9 @@ class ScrollToBottomButton(QPushButton):
 class ChatPanel(QWidget):
     """Premium panel for displaying the conversation history."""
 
+    # Signal emitted when current visible message changes (for TOC)
+    visible_message_changed = Signal(int)  # message_index
+
     def __init__(self, parent: QWidget | None = None):
         """Initialize the chat panel.
 
@@ -491,9 +494,11 @@ class ChatPanel(QWidget):
         """
         super().__init__(parent)
         self._bubbles: list[MessageBubble] = []
+        self._message_indices: dict[MessageBubble, int] = {}  # Bubble -> message index
         self._current_assistant_bubble: MessageBubble | None = None
         self._user_scrolled_up = False
         self._is_generating = False
+        self._next_message_index = 0
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -578,31 +583,45 @@ class ChatPanel(QWidget):
         self,
         content: str,
         timestamp: Optional[datetime] = None
-    ) -> None:
+    ) -> int:
         """Add a user message to the chat.
 
         Args:
             content: Message text
             timestamp: Message timestamp (defaults to now)
+
+        Returns:
+            Message index
         """
         bubble = MessageBubble("user", content, timestamp=timestamp)
+        message_index = self._next_message_index
+        self._message_indices[bubble] = message_index
+        self._next_message_index += 1
         self._add_bubble(bubble, align_right=True)
+        return message_index
 
     def start_assistant_message(
         self,
         timestamp: Optional[datetime] = None
-    ) -> None:
+    ) -> int:
         """Start a new assistant message for streaming.
 
         Args:
             timestamp: Message timestamp (defaults to now)
+
+        Returns:
+            Message index
         """
         self._is_generating = True
         self._user_scrolled_up = False
         bubble = MessageBubble("assistant", "", timestamp=timestamp)
         bubble.show_typing()
         self._current_assistant_bubble = bubble
+        message_index = self._next_message_index
+        self._message_indices[bubble] = message_index
+        self._next_message_index += 1
         self._add_bubble(bubble)
+        return message_index
 
     def append_to_assistant_message(self, text: str) -> None:
         """Append text to the current assistant message.
@@ -728,6 +747,8 @@ class ChatPanel(QWidget):
                 item.widget().deleteLater()
 
         self._bubbles.clear()
+        self._message_indices.clear()
+        self._next_message_index = 0
         self._current_assistant_bubble = None
         self._is_generating = False
         self._user_scrolled_up = False
@@ -735,3 +756,24 @@ class ChatPanel(QWidget):
 
         # Re-add the stretch
         self.messages_layout.addStretch()
+
+    def scroll_to_message(self, message_index: int) -> None:
+        """Scroll to a specific message by its index.
+
+        Args:
+            message_index: The index of the message to scroll to
+        """
+        # Find the bubble with this index
+        for bubble, idx in self._message_indices.items():
+            if idx == message_index:
+                # Scroll to show this bubble
+                self.scroll_area.ensureWidgetVisible(bubble, 0, 50)
+                return
+
+    def get_message_count(self) -> int:
+        """Get the total number of messages.
+
+        Returns:
+            Number of messages
+        """
+        return self._next_message_index

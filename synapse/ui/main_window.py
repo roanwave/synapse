@@ -31,6 +31,7 @@ from ..orchestrator.prompt_builder import PromptBuilder
 from ..orchestrator.context_manager import ContextManager, ContextState
 from ..orchestrator.intent_tracker import IntentTracker
 from ..orchestrator.waypoint_manager import WaypointManager
+from ..orchestrator.toc_generator import TOCGenerator
 from ..summarization.summary_generator import SummaryGenerator
 from ..summarization.drift_detector import DriftDetector
 from ..summarization.artifact_generator import ArtifactGenerator
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
         self._context_manager: Optional[ContextManager] = None
         self._intent_tracker = IntentTracker()
         self._waypoint_manager = WaypointManager()
+        self._toc_generator = TOCGenerator()
         self._summary_generator = SummaryGenerator()
         self._drift_detector = DriftDetector()
         self._artifact_generator = ArtifactGenerator()
@@ -140,6 +142,7 @@ class MainWindow(QMainWindow):
         self.sidebar.document_removed.connect(self._on_document_removed)
         self.sidebar.documents_cleared.connect(self._on_documents_cleared)
         self.sidebar.inspector_toggled.connect(self._on_inspector_toggled)
+        self.sidebar.jump_to_message.connect(self._on_jump_to_message)
         main_layout.addWidget(self.sidebar)
 
         # Chat area
@@ -616,8 +619,14 @@ class MainWindow(QMainWindow):
             message: The user's message
         """
         # Add user message to UI and history
-        self.chat_panel.add_user_message(message)
+        user_msg_index = self.chat_panel.add_user_message(message)
         self._prompt_builder.add_user_message(message)
+
+        # Analyze message for TOC entry
+        toc_entry = self._toc_generator.analyze_message(message, "user", user_msg_index)
+        if toc_entry:
+            self.sidebar.add_toc_entry(toc_entry)
+        self.sidebar.set_toc_current_index(user_msg_index)
 
         # Update context manager with message count
         if self._context_manager:
@@ -633,16 +642,21 @@ class MainWindow(QMainWindow):
         self._is_streaming = True
         self.input_panel.set_enabled(False)
         self.sidebar.set_regenerate_enabled(False)
-        self.chat_panel.start_assistant_message()
+        assistant_msg_index = self.chat_panel.start_assistant_message()
 
         # Await the streaming response with RAG
-        await self._stream_response_with_rag(message)
+        await self._stream_response_with_rag(message, assistant_msg_index)
 
-    async def _stream_response_with_rag(self, user_message: str) -> None:
+    async def _stream_response_with_rag(
+        self,
+        user_message: str,
+        assistant_msg_index: int = -1
+    ) -> None:
         """Stream a response with RAG retrieval.
 
         Args:
             user_message: The user's message for RAG query
+            assistant_msg_index: Index of the assistant message for TOC
         """
         # Perform RAG retrieval if documents are indexed
         if self._rag_initialized and self._vector_store:
@@ -659,10 +673,14 @@ class MainWindow(QMainWindow):
         self._update_inspector()
 
         # Stream the response
-        await self._stream_response()
+        await self._stream_response(assistant_msg_index)
 
-    async def _stream_response(self) -> None:
-        """Stream a response from the LLM."""
+    async def _stream_response(self, assistant_msg_index: int = -1) -> None:
+        """Stream a response from the LLM.
+
+        Args:
+            assistant_msg_index: Index of the assistant message for TOC
+        """
         if not self._adapter:
             return
 
@@ -688,6 +706,15 @@ class MainWindow(QMainWindow):
             # Add complete response to history
             self._prompt_builder.add_assistant_message(full_response)
             self.chat_panel.finish_assistant_message()
+
+            # Analyze completed response for TOC entry
+            if assistant_msg_index >= 0:
+                toc_entry = self._toc_generator.analyze_message(
+                    full_response, "assistant", assistant_msg_index
+                )
+                if toc_entry:
+                    self.sidebar.add_toc_entry(toc_entry)
+                self.sidebar.set_toc_current_index(assistant_msg_index)
 
         except Exception as e:
             error_msg = str(e)
@@ -966,6 +993,15 @@ class MainWindow(QMainWindow):
         if self._inspector_panel:
             self._inspector_panel.hide()
             self.sidebar.set_inspector_active(False)
+
+    def _on_jump_to_message(self, message_index: int) -> None:
+        """Handle TOC jump to message request.
+
+        Args:
+            message_index: Index of the message to scroll to
+        """
+        self.chat_panel.scroll_to_message(message_index)
+        self.sidebar.set_toc_current_index(message_index)
 
     async def _perform_rag_retrieval(self, query: str) -> List[Dict[str, Any]]:
         """Perform hybrid RAG retrieval for a query.
@@ -1281,11 +1317,13 @@ class MainWindow(QMainWindow):
 
         # Clear UI
         self.chat_panel.clear()
+        self.sidebar.clear_toc()
 
         # Reset conversation state
         self._prompt_builder = PromptBuilder()
         self._intent_tracker = IntentTracker()
         self._waypoint_manager = WaypointManager()
+        self._toc_generator = TOCGenerator()
         self._drift_detector = DriftDetector()
 
         # Create new session record
@@ -1427,9 +1465,11 @@ class MainWindow(QMainWindow):
 
         # Clear current state
         self.chat_panel.clear()
+        self.sidebar.clear_toc()
         self._prompt_builder = PromptBuilder()
         self._intent_tracker = IntentTracker()
         self._waypoint_manager = WaypointManager()
+        self._toc_generator = TOCGenerator()
         self._drift_detector = DriftDetector()
 
         # Create new session record (this is a continuation, new session ID)
@@ -1454,14 +1494,22 @@ class MainWindow(QMainWindow):
                 content = msg.get("content", "")
 
                 if role == "user":
-                    self.chat_panel.add_user_message(content)
+                    msg_index = self.chat_panel.add_user_message(content)
                     self._prompt_builder.add_user_message(content)
+                    # Analyze for TOC entry
+                    toc_entry = self._toc_generator.analyze_message(content, "user", msg_index)
+                    if toc_entry:
+                        self.sidebar.add_toc_entry(toc_entry)
                 elif role == "assistant":
                     # Add assistant message directly (not through streaming)
-                    self.chat_panel.start_assistant_message()
+                    msg_index = self.chat_panel.start_assistant_message()
                     self.chat_panel.append_to_assistant_message(content)
                     self.chat_panel.finish_assistant_message()
                     self._prompt_builder.add_assistant_message(content)
+                    # Analyze for TOC entry
+                    toc_entry = self._toc_generator.analyze_message(content, "assistant", msg_index)
+                    if toc_entry:
+                        self.sidebar.add_toc_entry(toc_entry)
 
             # Also restore summary if present (for summarized older messages)
             if has_summary:
