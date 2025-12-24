@@ -167,6 +167,7 @@ class PromptBuilder:
         self._base_system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
         self.history = ConversationHistory()
         self._summary_block: Optional[str] = None
+        self._memory_context: Optional[str] = None
         self._rag_context: Optional[str] = None
         self._rag_chunks: List[Dict[str, Any]] = []  # For inspector
         self._youtube_context: Optional[str] = None
@@ -190,6 +191,18 @@ class PromptBuilder:
     def clear_summary(self) -> None:
         """Clear the summary block."""
         self._summary_block = None
+
+    def set_memory_context(self, memory_block: str) -> None:
+        """Set the memory context to inject into prompts.
+
+        Args:
+            memory_block: The formatted memory context from UnifiedMemory
+        """
+        self._memory_context = memory_block if memory_block else None
+
+    def clear_memory_context(self) -> None:
+        """Clear the memory context."""
+        self._memory_context = None
 
     def set_intent_hint(self, hint: str) -> None:
         """Set the intent hint to inject into prompts.
@@ -293,15 +306,20 @@ class PromptBuilder:
 
         Assembles:
         1. Base system prompt
-        2. Summary block (if present)
-        3. RAG context (if present)
-        4. YouTube context (if present)
-        5. Intent hint (if present)
+        2. Memory context (if present) - persistent user facts
+        3. Summary block (if present)
+        4. RAG context (if present)
+        5. YouTube context (if present)
+        6. Intent hint (if present)
 
         Returns:
             The complete system prompt string
         """
         parts = [self._base_system_prompt]
+
+        if self._memory_context:
+            parts.append("")
+            parts.append(self._memory_context)
 
         if self._summary_block:
             parts.append("")

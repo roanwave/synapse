@@ -23,6 +23,7 @@ from .input_panel import InputPanel
 from .sidebar import Sidebar
 from .inspector import InspectorPanel
 from .side_panel import SidePanel
+from .memory_panel import MemoryPanel
 from .dialogs import ExitDialog, ExitAction, HelpDialog, AboutDialog, SessionBrowserDialog, NotificationToast, SummaryViewerDialog, ConversationSearchDialog
 from ..config.settings import settings
 from ..config.models import MODELS, get_model, get_available_models
@@ -57,6 +58,7 @@ from ..storage.document_indexer import DocumentIndexer
 from ..storage.retrieval_blacklist import RetrievalBlacklist
 from ..storage.conversation_store import ConversationStore
 from ..storage.conversation_indexer import ConversationIndexer
+from ..storage.unified_memory import UnifiedMemory
 
 
 class MainWindow(QMainWindow):
@@ -99,6 +101,11 @@ class MainWindow(QMainWindow):
         self._session_record = SessionRecord.create()
         self._conversation_store = ConversationStore(
             settings.conversations_dir / "sessions.jsonl"
+        )
+
+        # Unified memory (persistent facts)
+        self._unified_memory = UnifiedMemory(
+            settings.app_data_dir / "unified_memory.json"
         )
         self._loaded_session_summary: Optional[str] = None  # Summary from loaded session
 
@@ -419,6 +426,11 @@ class MainWindow(QMainWindow):
         summary_action.triggered.connect(self._on_view_summary)
         view_menu.addAction(summary_action)
 
+        memory_action = QAction("&Memory...", self)
+        memory_action.setShortcut("Ctrl+M")
+        memory_action.triggered.connect(self._on_view_memory)
+        view_menu.addAction(memory_action)
+
         # === Help Menu ===
         help_menu = menu_bar.addMenu("&Help")
 
@@ -652,6 +664,9 @@ class MainWindow(QMainWindow):
         if toc_entry:
             self.sidebar.add_toc_entry(toc_entry)
         self.sidebar.set_toc_current_index(user_msg_index)
+
+        # Update memory context (filter by current message for relevance)
+        self._update_memory_context(message)
 
         # Update context manager with message count
         if self._context_manager:
@@ -1905,3 +1920,17 @@ class MainWindow(QMainWindow):
             self._side_streaming = False
             self._side_panel.set_input_enabled(True)
             self._side_panel.focus_input()
+
+    def _on_view_memory(self) -> None:
+        """Open the unified memory panel."""
+        dialog = MemoryPanel(self._unified_memory, self)
+        dialog.exec()
+
+    def _update_memory_context(self, context: Optional[str] = None) -> None:
+        """Update the memory context in the prompt builder.
+
+        Args:
+            context: Optional context for relevance filtering
+        """
+        memory_block = self._unified_memory.build_memory_prompt(context)
+        self._prompt_builder.set_memory_context(memory_block)
