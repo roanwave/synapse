@@ -1059,3 +1059,356 @@ class SummaryViewerDialog(QDialog):
             self.accept()
         else:
             super().keyPressEvent(event)
+
+
+class ConversationSearchDialog(QDialog):
+    """Dialog for semantic search across conversations."""
+
+    # Signal emitted when user wants to open a session
+    session_selected = Signal(str)  # session_id
+    # Signal emitted when search is requested
+    search_requested = Signal(str)  # query
+    # Signal emitted when index is requested
+    index_requested = Signal()
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        """Initialize the search dialog.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self._search_results = []
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """Set up the dialog UI."""
+        self.setWindowTitle("Search Conversations")
+        self.setMinimumSize(700, 550)
+        self.setModal(True)
+
+        self.setWindowFlags(
+            Qt.WindowType.Dialog |
+            Qt.WindowType.FramelessWindowHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        container = QFrame(self)
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: {theme.background_secondary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_large}px;
+            }}
+        """)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(container)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(
+            metrics.padding_xlarge,
+            metrics.padding_xlarge,
+            metrics.padding_xlarge,
+            metrics.padding_large,
+        )
+        layout.setSpacing(metrics.padding_medium)
+
+        # Header
+        title = QLabel("Search Conversations")
+        title.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_primary};
+                font-size: 18px;
+                font-weight: 600;
+                font-family: {fonts.ui};
+            }}
+        """)
+        layout.addWidget(title)
+
+        # Search input
+        from PySide6.QtWidgets import QLineEdit
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(metrics.padding_small)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search for topics, questions, or ideas...")
+        self.search_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {theme.background_tertiary};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_medium}px;
+                padding: 12px 16px;
+                font-size: {metrics.font_normal}px;
+                font-family: {fonts.ui};
+            }}
+            QLineEdit:focus {{
+                border-color: {theme.accent};
+            }}
+            QLineEdit::placeholder {{
+                color: {theme.text_muted};
+            }}
+        """)
+        self.search_input.returnPressed.connect(self._on_search)
+        search_layout.addWidget(self.search_input, stretch=1)
+
+        search_btn = QPushButton("Search")
+        search_btn.setStyleSheet(self._primary_button_style())
+        search_btn.clicked.connect(self._on_search)
+        search_layout.addWidget(search_btn)
+
+        layout.addLayout(search_layout)
+
+        # Status label
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_muted};
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.ui};
+            }}
+        """)
+        layout.addWidget(self.status_label)
+
+        # Results list
+        self.results_list = QListWidget()
+        self.results_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {theme.background_secondary};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_medium}px;
+                font-size: {metrics.font_normal}px;
+                font-family: {fonts.ui};
+                padding: {metrics.padding_small}px;
+            }}
+            QListWidget::item {{
+                padding: {metrics.padding_medium}px;
+                border-radius: {metrics.radius_small}px;
+                margin: 2px 0;
+                border-bottom: 1px solid {theme.border_subtle};
+            }}
+            QListWidget::item:selected {{
+                background-color: {theme.background_tertiary};
+                border-left: 3px solid {theme.accent};
+            }}
+            QListWidget::item:hover {{
+                background-color: {theme.background_tertiary};
+            }}
+        """)
+        self.results_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.results_list.itemSelectionChanged.connect(self._on_selection_changed)
+        layout.addWidget(self.results_list, stretch=1)
+
+        # Preview area
+        from PySide6.QtWidgets import QTextEdit
+        preview_label = QLabel("Preview")
+        preview_label.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_secondary};
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.ui};
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }}
+        """)
+        layout.addWidget(preview_label)
+
+        self.preview_text = QTextEdit()
+        self.preview_text.setReadOnly(True)
+        self.preview_text.setMaximumHeight(120)
+        self.preview_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {theme.background_tertiary};
+                color: {theme.text_secondary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_medium}px;
+                padding: {metrics.padding_small}px;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_small}px;
+            }}
+        """)
+        layout.addWidget(self.preview_text)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(metrics.padding_small)
+
+        # Index button
+        self.index_btn = QPushButton("Index All Sessions")
+        self.index_btn.setStyleSheet(self._secondary_button_style())
+        self.index_btn.clicked.connect(self._on_index_clicked)
+        button_layout.addWidget(self.index_btn)
+
+        button_layout.addStretch()
+
+        close_btn = QPushButton("Close")
+        close_btn.setStyleSheet(self._secondary_button_style())
+        close_btn.clicked.connect(self.reject)
+        button_layout.addWidget(close_btn)
+
+        open_btn = QPushButton("Open Session")
+        open_btn.setStyleSheet(self._primary_button_style())
+        open_btn.clicked.connect(self._on_open_clicked)
+        button_layout.addWidget(open_btn)
+
+        layout.addLayout(button_layout)
+
+    def _on_search(self) -> None:
+        """Handle search button click."""
+        query = self.search_input.text().strip()
+        if not query:
+            return
+
+        self.status_label.setText("Searching...")
+        self.results_list.clear()
+        self.search_requested.emit(query)
+
+    def set_results(self, results: list, query: str) -> None:
+        """Set search results from external async call.
+
+        Args:
+            results: List of ConversationSearchResult objects
+            query: The original query
+        """
+        self._search_results = results
+        self.results_list.clear()
+
+        if not results:
+            self.status_label.setText(f"No results for \"{query}\"")
+            return
+
+        self.status_label.setText(f"Found {len(results)} result(s) for \"{query}\"")
+
+        for result in results:
+            # Format: [role] [date] - content preview
+            role_icon = "You" if result.role == "user" else "AI"
+            date_str = result.session_date.strftime("%b %d, %Y")
+            content_preview = result.message_content[:80].replace("\n", " ")
+            if len(result.message_content) > 80:
+                content_preview += "..."
+
+            score_pct = int(result.similarity_score * 100)
+            item_text = f"[{role_icon}] {date_str} ({score_pct}%)\n{content_preview}"
+
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, result)
+            self.results_list.addItem(item)
+
+    def _on_selection_changed(self) -> None:
+        """Handle result selection change."""
+        items = self.results_list.selectedItems()
+        if not items:
+            self.preview_text.clear()
+            return
+
+        result = items[0].data(Qt.ItemDataRole.UserRole)
+        if not result:
+            return
+
+        # Build preview with context
+        preview_parts = []
+        if result.context_before:
+            preview_parts.append(f"[Previous message]\n{result.context_before}\n")
+        preview_parts.append(f"[Matched message]\n{result.message_content}\n")
+        if result.context_after:
+            preview_parts.append(f"[Next message]\n{result.context_after}")
+
+        self.preview_text.setPlainText("\n".join(preview_parts))
+
+    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
+        """Handle double-click on result."""
+        result = item.data(Qt.ItemDataRole.UserRole)
+        if result and result.session_id:
+            self.session_selected.emit(result.session_id)
+            self.accept()
+
+    def _on_open_clicked(self) -> None:
+        """Handle open session button click."""
+        items = self.results_list.selectedItems()
+        if items:
+            result = items[0].data(Qt.ItemDataRole.UserRole)
+            if result and result.session_id:
+                self.session_selected.emit(result.session_id)
+                self.accept()
+
+    def _on_index_clicked(self) -> None:
+        """Handle index all sessions button click."""
+        self.index_btn.setText("Indexing...")
+        self.index_btn.setEnabled(False)
+        self.index_requested.emit()
+
+    def set_index_complete(self, count: int) -> None:
+        """Update UI after indexing completes.
+
+        Args:
+            count: Number of sessions indexed
+        """
+        self.index_btn.setText("Index All Sessions")
+        self.index_btn.setEnabled(True)
+        self.status_label.setText(f"Indexed {count} session(s). Ready to search.")
+
+    def get_query(self) -> str:
+        """Get the current search query."""
+        return self.search_input.text().strip()
+
+    def _primary_button_style(self) -> str:
+        """Get primary button stylesheet."""
+        return f"""
+            QPushButton {{
+                background-color: {theme.accent};
+                color: white;
+                border: none;
+                border-radius: {metrics.radius_medium}px;
+                padding: 10px 20px;
+                font-weight: 500;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.accent_hover};
+            }}
+            QPushButton:pressed {{
+                background-color: {theme.accent_pressed};
+            }}
+            QPushButton:disabled {{
+                background-color: {theme.text_muted};
+            }}
+        """
+
+    def _secondary_button_style(self) -> str:
+        """Get secondary button stylesheet."""
+        return f"""
+            QPushButton {{
+                background-color: {theme.background_secondary};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_medium}px;
+                padding: 10px 20px;
+                font-weight: 500;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_normal}px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.border_subtle};
+                border-color: {theme.border};
+            }}
+            QPushButton:pressed {{
+                background-color: {theme.background_tertiary};
+            }}
+            QPushButton:disabled {{
+                color: {theme.text_muted};
+            }}
+        """
+
+    def keyPressEvent(self, event) -> None:
+        """Handle key press - close on Escape."""
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)

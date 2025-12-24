@@ -22,7 +22,7 @@ from .chat_panel import ChatPanel
 from .input_panel import InputPanel
 from .sidebar import Sidebar
 from .inspector import InspectorPanel
-from .dialogs import ExitDialog, ExitAction, HelpDialog, AboutDialog, SessionBrowserDialog, NotificationToast, SummaryViewerDialog
+from .dialogs import ExitDialog, ExitAction, HelpDialog, AboutDialog, SessionBrowserDialog, NotificationToast, SummaryViewerDialog, ConversationSearchDialog
 from ..config.settings import settings
 from ..config.models import MODELS, get_model, get_available_models
 from ..config.themes import get_stylesheet, theme, fonts, metrics
@@ -53,6 +53,7 @@ from ..storage.bm25_client import BM25Client, reciprocal_rank_fusion
 from ..storage.document_indexer import DocumentIndexer
 from ..storage.retrieval_blacklist import RetrievalBlacklist
 from ..storage.conversation_store import ConversationStore
+from ..storage.conversation_indexer import ConversationIndexer
 
 
 class MainWindow(QMainWindow):
@@ -91,6 +92,10 @@ class MainWindow(QMainWindow):
             settings.conversations_dir / "sessions.jsonl"
         )
         self._loaded_session_summary: Optional[str] = None  # Summary from loaded session
+
+        # Conversation indexer for semantic search
+        self._conversation_indexer: Optional[ConversationIndexer] = None
+        self._search_dialog: Optional[ConversationSearchDialog] = None
 
         self._setup_ui()
         self._setup_shortcuts()
@@ -355,6 +360,13 @@ class MainWindow(QMainWindow):
         regenerate_action.setShortcut("Ctrl+R")
         regenerate_action.triggered.connect(self._on_regenerate_requested)
         edit_menu.addAction(regenerate_action)
+
+        edit_menu.addSeparator()
+
+        search_action = QAction("&Search Conversations...", self)
+        search_action.setShortcut("Ctrl+Shift+F")
+        search_action.triggered.connect(self._on_search_conversations)
+        edit_menu.addAction(search_action)
 
         # === View Menu ===
         view_menu = menu_bar.addMenu("&View")
@@ -1462,3 +1474,101 @@ class MainWindow(QMainWindow):
             parent=self
         )
         dialog.exec()
+
+    def _on_search_conversations(self) -> None:
+        """Open the conversation search dialog."""
+        # Initialize conversation indexer if not already done
+        if not self._conversation_indexer:
+            try:
+                self._conversation_indexer = ConversationIndexer(
+                    index_path=settings.app_data_dir / "conversation_index",
+                )
+            except Exception as e:
+                self.status_bar.showMessage(f"Search init failed: {e}", 5000)
+                return
+
+        # Create and show search dialog
+        self._search_dialog = ConversationSearchDialog(self)
+        self._search_dialog.search_requested.connect(self._on_search_requested)
+        self._search_dialog.index_requested.connect(self._on_index_requested)
+        self._search_dialog.session_selected.connect(self._on_search_session_selected)
+
+        # Show index status
+        msg_count = self._conversation_indexer.get_indexed_message_count()
+        session_count = self._conversation_indexer.get_indexed_session_count()
+        if msg_count > 0:
+            self._search_dialog.status_label.setText(
+                f"Index contains {session_count} session(s), {msg_count} message(s)"
+            )
+
+        self._search_dialog.exec()
+
+    def _on_search_requested(self, query: str) -> None:
+        """Handle search request from dialog.
+
+        Args:
+            query: The search query
+        """
+        if not self._conversation_indexer or not self._search_dialog:
+            return
+
+        asyncio.ensure_future(self._perform_conversation_search(query))
+
+    async def _perform_conversation_search(self, query: str) -> None:
+        """Perform semantic search across conversations.
+
+        Args:
+            query: The search query
+        """
+        if not self._conversation_indexer or not self._search_dialog:
+            return
+
+        try:
+            results = await self._conversation_indexer.search(query, k=20)
+            self._search_dialog.set_results(results, query)
+        except Exception as e:
+            self._search_dialog.status_label.setText(f"Search error: {str(e)}")
+
+    def _on_index_requested(self) -> None:
+        """Handle index all sessions request from dialog."""
+        if not self._conversation_indexer or not self._search_dialog:
+            return
+
+        asyncio.ensure_future(self._index_all_sessions())
+
+    async def _index_all_sessions(self) -> None:
+        """Index all sessions for semantic search."""
+        if not self._conversation_indexer or not self._search_dialog:
+            return
+
+        try:
+            sessions = self._conversation_store.get_recent_sessions(limit=100)
+            indexed_count = 0
+
+            for session in sessions:
+                # Skip if already indexed
+                if self._conversation_indexer.is_session_indexed(session.session_id):
+                    continue
+
+                # Index session
+                count = await self._conversation_indexer.index_session(session)
+                if count > 0:
+                    indexed_count += 1
+
+            self._search_dialog.set_index_complete(indexed_count)
+
+        except Exception as e:
+            self._search_dialog.status_label.setText(f"Index error: {str(e)}")
+            self._search_dialog.index_btn.setText("Index All Sessions")
+            self._search_dialog.index_btn.setEnabled(True)
+
+    def _on_search_session_selected(self, session_id: str) -> None:
+        """Handle session selection from search results.
+
+        Args:
+            session_id: The selected session ID
+        """
+        # Find the session
+        session = self._conversation_store.get_session(session_id)
+        if session:
+            self._load_session_replay(session)
