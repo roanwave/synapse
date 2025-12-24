@@ -231,10 +231,9 @@ class ContextBudgetIndicator(QFrame):
         self.progress.setValue(0)
         self.progress.setTextVisible(False)
         self.progress.setFixedHeight(6)
-        self._update_progress_style(0)
         layout.addWidget(self.progress)
 
-        # Token count label
+        # Token count label (must be created before _update_progress_style)
         self.token_label = QLabel("0 / 0 tokens")
         self.token_label.setStyleSheet(f"""
             QLabel {{
@@ -246,6 +245,9 @@ class ContextBudgetIndicator(QFrame):
             }}
         """)
         layout.addWidget(self.token_label)
+
+        # Apply initial progress style (after token_label exists)
+        self._update_progress_style(0)
 
         # Premium frame styling
         self.setStyleSheet(f"""
