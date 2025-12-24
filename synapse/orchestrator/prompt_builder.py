@@ -168,6 +168,7 @@ class PromptBuilder:
         self.history = ConversationHistory()
         self._summary_block: Optional[str] = None
         self._memory_context: Optional[str] = None
+        self._scratchpad_content: Optional[str] = None
         self._rag_context: Optional[str] = None
         self._rag_chunks: List[Dict[str, Any]] = []  # For inspector
         self._youtube_context: Optional[str] = None
@@ -203,6 +204,26 @@ class PromptBuilder:
     def clear_memory_context(self) -> None:
         """Clear the memory context."""
         self._memory_context = None
+
+    def set_scratchpad(self, content: str) -> None:
+        """Set the scratchpad content to inject into prompts.
+
+        Args:
+            content: The scratchpad text content
+        """
+        if content and content.strip():
+            self._scratchpad_content = (
+                "<Scratchpad>\n"
+                "The user has the following private notes visible to you:\n\n"
+                f"{content}\n"
+                "</Scratchpad>"
+            )
+        else:
+            self._scratchpad_content = None
+
+    def clear_scratchpad(self) -> None:
+        """Clear the scratchpad content."""
+        self._scratchpad_content = None
 
     def set_intent_hint(self, hint: str) -> None:
         """Set the intent hint to inject into prompts.
@@ -307,10 +328,11 @@ class PromptBuilder:
         Assembles:
         1. Base system prompt
         2. Memory context (if present) - persistent user facts
-        3. Summary block (if present)
-        4. RAG context (if present)
-        5. YouTube context (if present)
-        6. Intent hint (if present)
+        3. Scratchpad (if present) - user's private notes
+        4. Summary block (if present)
+        5. RAG context (if present)
+        6. YouTube context (if present)
+        7. Intent hint (if present)
 
         Returns:
             The complete system prompt string
@@ -320,6 +342,10 @@ class PromptBuilder:
         if self._memory_context:
             parts.append("")
             parts.append(self._memory_context)
+
+        if self._scratchpad_content:
+            parts.append("")
+            parts.append(self._scratchpad_content)
 
         if self._summary_block:
             parts.append("")

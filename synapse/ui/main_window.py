@@ -24,6 +24,7 @@ from .sidebar import Sidebar
 from .inspector import InspectorPanel
 from .side_panel import SidePanel
 from .memory_panel import MemoryPanel
+from .scratchpad_panel import ScratchpadPanel
 from .dialogs import ExitDialog, ExitAction, HelpDialog, AboutDialog, SessionBrowserDialog, NotificationToast, SummaryViewerDialog, ConversationSearchDialog
 from ..config.settings import settings
 from ..config.models import MODELS, get_model, get_available_models
@@ -175,6 +176,11 @@ class MainWindow(QMainWindow):
         divider.setFixedHeight(1)
         divider.setStyleSheet(f"background-color: {theme.border_subtle};")
         chat_layout.addWidget(divider)
+
+        # Scratchpad panel (collapsible, above input)
+        self._scratchpad_panel = ScratchpadPanel()
+        self._scratchpad_panel.content_changed.connect(self._on_scratchpad_changed)
+        chat_layout.addWidget(self._scratchpad_panel)
 
         # Input panel
         self.input_panel = InputPanel()
@@ -668,6 +674,9 @@ class MainWindow(QMainWindow):
         # Update memory context (filter by current message for relevance)
         self._update_memory_context(message)
 
+        # Update scratchpad context
+        self._update_scratchpad_context()
+
         # Update context manager with message count
         if self._context_manager:
             self._context_manager.update_message_counts(
@@ -1098,6 +1107,7 @@ class MainWindow(QMainWindow):
         # Clear current state
         self.chat_panel.clear()
         self.sidebar.clear_toc()
+        self._scratchpad_panel.clear()
         self._prompt_builder = PromptBuilder()
         self._intent_tracker = IntentTracker()
         self._waypoint_manager = WaypointManager()
@@ -1459,6 +1469,7 @@ class MainWindow(QMainWindow):
         # Clear UI
         self.chat_panel.clear()
         self.sidebar.clear_toc()
+        self._scratchpad_panel.clear()
 
         # Reset conversation state
         self._prompt_builder = PromptBuilder()
@@ -1607,6 +1618,7 @@ class MainWindow(QMainWindow):
         # Clear current state
         self.chat_panel.clear()
         self.sidebar.clear_toc()
+        self._scratchpad_panel.clear()
         self._prompt_builder = PromptBuilder()
         self._intent_tracker = IntentTracker()
         self._waypoint_manager = WaypointManager()
@@ -1934,3 +1946,16 @@ class MainWindow(QMainWindow):
         """
         memory_block = self._unified_memory.build_memory_prompt(context)
         self._prompt_builder.set_memory_context(memory_block)
+
+    def _on_scratchpad_changed(self, content: str) -> None:
+        """Handle scratchpad content changes.
+
+        Args:
+            content: New scratchpad content
+        """
+        self._prompt_builder.set_scratchpad(content)
+
+    def _update_scratchpad_context(self) -> None:
+        """Update the scratchpad context in the prompt builder."""
+        content = self._scratchpad_panel.get_content()
+        self._prompt_builder.set_scratchpad(content)
