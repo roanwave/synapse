@@ -10,12 +10,91 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QTextBrowser,
     QGraphicsOpacityEffect,
+    QPushButton,
+    QApplication,
 )
-from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, Property, QPoint
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QDesktopServices
 
 from ..config.themes import theme, fonts, metrics
-from ..utils.markdown_renderer import render_markdown
+from ..utils.markdown_renderer import render_markdown, strip_markdown
+
+
+class CopyButton(QPushButton):
+    """Subtle copy button with hover effects and visual feedback."""
+
+    def __init__(self, parent: QWidget | None = None):
+        """Initialize the copy button.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self._is_copied = False
+        self._reset_timer: QTimer | None = None
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """Set up the button UI."""
+        self.setText("Copy")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(24)
+        self._apply_normal_style()
+
+    def _apply_normal_style(self) -> None:
+        """Apply normal (not copied) style."""
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {theme.text_muted};
+                border: none;
+                font-size: 11px;
+                font-family: {fonts.ui};
+                font-weight: 500;
+                padding: 4px 8px;
+                opacity: 0.5;
+            }}
+            QPushButton:hover {{
+                color: {theme.text_primary};
+                background-color: {theme.background_elevated};
+                border-radius: 4px;
+            }}
+        """)
+
+    def _apply_copied_style(self) -> None:
+        """Apply copied feedback style."""
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {theme.success};
+                color: white;
+                border: none;
+                font-size: 11px;
+                font-family: {fonts.ui};
+                font-weight: 500;
+                padding: 4px 8px;
+                border-radius: 4px;
+            }}
+        """)
+
+    def show_copied_feedback(self) -> None:
+        """Show copied visual feedback for 1.5 seconds."""
+        self._is_copied = True
+        self.setText("Copied!")
+        self._apply_copied_style()
+
+        # Reset after 1.5 seconds
+        if self._reset_timer:
+            self._reset_timer.stop()
+        self._reset_timer = QTimer(self)
+        self._reset_timer.setSingleShot(True)
+        self._reset_timer.timeout.connect(self._reset_state)
+        self._reset_timer.start(1500)
+
+    def _reset_state(self) -> None:
+        """Reset to normal state."""
+        self._is_copied = False
+        self.setText("Copy")
+        self._apply_normal_style()
 
 
 class TypingIndicator(QWidget):
@@ -116,6 +195,7 @@ class MessageBubble(QFrame):
         self.role = role
         self._raw_content = content
         self._typing_indicator: TypingIndicator | None = None
+        self._copy_button: CopyButton | None = None
         self._setup_ui(content)
 
     def _setup_ui(self, content: str) -> None:
@@ -123,6 +203,11 @@ class MessageBubble(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
+
+        # Header row with role label and copy button
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
 
         # Role label - subtle, premium
         role_text = "You" if self.role == "user" else "Synapse"
@@ -137,11 +222,20 @@ class MessageBubble(QFrame):
                 letter-spacing: 0.3px;
             }}
         """)
-        layout.addWidget(role_label)
+        header_row.addWidget(role_label)
+
+        header_row.addStretch()
+
+        # Copy button
+        self._copy_button = CopyButton()
+        self._copy_button.clicked.connect(self._on_copy_clicked)
+        header_row.addWidget(self._copy_button)
+
+        layout.addLayout(header_row)
 
         # Content container for styling
-        content_frame = QFrame()
-        content_layout = QVBoxLayout(content_frame)
+        self._content_frame = QFrame()
+        content_layout = QVBoxLayout(self._content_frame)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
@@ -157,7 +251,7 @@ class MessageBubble(QFrame):
         # Premium styling based on role
         if self.role == "user":
             # User messages: Gradient background with shadow
-            content_frame.setStyleSheet(f"""
+            self._content_frame.setStyleSheet(f"""
                 QFrame {{
                     background: qlineargradient(
                         x1:0, y1:0, x2:1, y2:1,
@@ -182,7 +276,7 @@ class MessageBubble(QFrame):
             """)
         else:
             # Assistant messages: Elevated surface with accent bar
-            content_frame.setStyleSheet(f"""
+            self._content_frame.setStyleSheet(f"""
                 QFrame {{
                     background-color: {theme.assistant_bubble};
                     border: 1px solid {theme.border};
@@ -214,7 +308,7 @@ class MessageBubble(QFrame):
             self._render_content(content)
 
         content_layout.addWidget(self.content_browser)
-        layout.addWidget(content_frame)
+        layout.addWidget(self._content_frame)
 
         # Set max width based on role
         if self.role == "user":
@@ -230,6 +324,19 @@ class MessageBubble(QFrame):
         """)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+    def _on_copy_clicked(self) -> None:
+        """Handle copy button click."""
+        # Get plain text content (strip markdown)
+        plain_text = strip_markdown(self._raw_content)
+
+        # Copy to clipboard
+        clipboard = QApplication.clipboard()
+        clipboard.setText(plain_text)
+
+        # Show feedback
+        if self._copy_button:
+            self._copy_button.show_copied_feedback()
 
     def _render_content(self, content: str) -> None:
         """Render markdown content as HTML.
@@ -294,6 +401,41 @@ class MessageBubble(QFrame):
             self._typing_indicator.hide()
 
 
+class ScrollToBottomButton(QPushButton):
+    """Button that appears when user scrolls up during generation."""
+
+    def __init__(self, parent: QWidget | None = None):
+        """Initialize the scroll button.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self._setup_ui()
+        self.hide()
+
+    def _setup_ui(self) -> None:
+        """Set up the button UI."""
+        self.setText("↓ New content")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {theme.accent};
+                color: white;
+                border: none;
+                border-radius: {metrics.radius_medium}px;
+                font-size: 12px;
+                font-family: {fonts.ui};
+                font-weight: 500;
+                padding: 8px 16px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.accent_hover};
+            }}
+        """)
+        self.adjustSize()
+
+
 class ChatPanel(QWidget):
     """Premium panel for displaying the conversation history."""
 
@@ -306,6 +448,8 @@ class ChatPanel(QWidget):
         super().__init__(parent)
         self._bubbles: list[MessageBubble] = []
         self._current_assistant_bubble: MessageBubble | None = None
+        self._user_scrolled_up = False
+        self._is_generating = False
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -329,6 +473,10 @@ class ChatPanel(QWidget):
             }}
         """)
 
+        # Connect scroll events for scroll lock
+        scrollbar = self.scroll_area.verticalScrollBar()
+        scrollbar.valueChanged.connect(self._on_scroll_changed)
+
         # Container for messages
         self.messages_container = QWidget()
         self.messages_container.setStyleSheet(f"""
@@ -345,6 +493,43 @@ class ChatPanel(QWidget):
         self.scroll_area.setWidget(self.messages_container)
         layout.addWidget(self.scroll_area)
 
+        # Scroll to bottom button (initially hidden)
+        self._scroll_button = ScrollToBottomButton(self)
+        self._scroll_button.clicked.connect(self._on_scroll_button_clicked)
+
+    def resizeEvent(self, event) -> None:
+        """Handle resize to position scroll button."""
+        super().resizeEvent(event)
+        self._position_scroll_button()
+
+    def _position_scroll_button(self) -> None:
+        """Position the scroll button at bottom center."""
+        if self._scroll_button:
+            btn_width = self._scroll_button.width()
+            x = (self.width() - btn_width) // 2
+            y = self.height() - 60
+            self._scroll_button.move(x, y)
+
+    def _on_scroll_changed(self, value: int) -> None:
+        """Handle scroll position changes."""
+        scrollbar = self.scroll_area.verticalScrollBar()
+        at_bottom = (scrollbar.maximum() - value) < 50  # Within 50px of bottom
+
+        if self._is_generating:
+            if at_bottom:
+                self._user_scrolled_up = False
+                self._scroll_button.hide()
+            else:
+                self._user_scrolled_up = True
+                self._scroll_button.show()
+                self._position_scroll_button()
+
+    def _on_scroll_button_clicked(self) -> None:
+        """Handle scroll button click."""
+        self._user_scrolled_up = False
+        self._scroll_button.hide()
+        self._scroll_to_bottom()
+
     def add_user_message(self, content: str) -> None:
         """Add a user message to the chat.
 
@@ -356,6 +541,8 @@ class ChatPanel(QWidget):
 
     def start_assistant_message(self) -> None:
         """Start a new assistant message for streaming."""
+        self._is_generating = True
+        self._user_scrolled_up = False
         bubble = MessageBubble("assistant", "")
         bubble.show_typing()
         self._current_assistant_bubble = bubble
@@ -372,10 +559,16 @@ class ChatPanel(QWidget):
             if not self._current_assistant_bubble._raw_content:
                 self._current_assistant_bubble.hide_typing()
             self._current_assistant_bubble.append_content(text)
-            self._scroll_to_bottom()
+
+            # Only auto-scroll if user hasn't scrolled up
+            if not self._user_scrolled_up:
+                self._scroll_to_bottom()
 
     def finish_assistant_message(self) -> None:
         """Mark the current assistant message as complete."""
+        self._is_generating = False
+        self._user_scrolled_up = False
+        self._scroll_button.hide()
         if self._current_assistant_bubble:
             self._current_assistant_bubble.hide_typing()
         self._current_assistant_bubble = None
@@ -386,6 +579,9 @@ class ChatPanel(QWidget):
         Args:
             error: Error text
         """
+        self._is_generating = False
+        self._scroll_button.hide()
+
         # Hide typing if showing
         if self._current_assistant_bubble:
             self._current_assistant_bubble.hide_typing()
@@ -477,6 +673,9 @@ class ChatPanel(QWidget):
 
         self._bubbles.clear()
         self._current_assistant_bubble = None
+        self._is_generating = False
+        self._user_scrolled_up = False
+        self._scroll_button.hide()
 
         # Re-add the stretch
         self.messages_layout.addStretch()
