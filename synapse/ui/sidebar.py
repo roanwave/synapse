@@ -1,4 +1,4 @@
-"""Sidebar panel with model selector and settings."""
+"""Premium sidebar panel with model selector and settings."""
 
 from typing import List
 from pathlib import Path
@@ -24,7 +24,7 @@ from ..config.models import MODELS, get_available_models, ModelConfig
 
 
 class ModelSelector(QFrame):
-    """Model selection dropdown with provider grouping."""
+    """Premium model selection dropdown with provider grouping."""
 
     model_changed = Signal(str)  # Emits model_id
 
@@ -39,41 +39,40 @@ class ModelSelector(QFrame):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Set up the selector UI."""
+        """Set up the premium selector UI."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
-            metrics.padding_medium,
-            metrics.padding_medium,
-            metrics.padding_medium,
-            metrics.padding_medium,
+            metrics.padding_large,
+            metrics.padding_large,
+            metrics.padding_large,
+            metrics.padding_large,
         )
         layout.setSpacing(metrics.padding_small)
 
-        # Label
-        label = QLabel("Model")
+        # Section label - uppercase, muted
+        label = QLabel("MODEL")
         label.setStyleSheet(f"""
             QLabel {{
-                color: {theme.text_secondary};
+                color: {theme.text_muted};
                 font-size: {metrics.font_small}px;
                 font-weight: 600;
                 font-family: {fonts.ui};
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
+                letter-spacing: 1px;
                 background: transparent;
             }}
         """)
         layout.addWidget(label)
 
-        # Dropdown
+        # Premium dropdown
         self.combo = QComboBox()
         self.combo.setStyleSheet(f"""
             QComboBox {{
-                background-color: {theme.background};
+                background-color: {theme.background_elevated};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
                 border-radius: {metrics.radius_medium}px;
-                padding: {metrics.padding_medium}px {metrics.padding_medium}px;
-                min-height: 24px;
+                padding: {metrics.padding_medium}px;
+                min-height: 28px;
                 font-family: {fonts.ui};
                 font-size: {metrics.font_normal}px;
             }}
@@ -81,7 +80,7 @@ class ModelSelector(QFrame):
                 border-color: {theme.accent};
             }}
             QComboBox:focus {{
-                border-color: {theme.accent};
+                border: 2px solid {theme.border_focus};
             }}
             QComboBox::drop-down {{
                 border: none;
@@ -91,14 +90,14 @@ class ModelSelector(QFrame):
                 image: none;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
-                border-top: 6px solid {theme.text_secondary};
+                border-top: 6px solid {theme.text_muted};
                 margin-right: {metrics.padding_small}px;
             }}
             QComboBox QAbstractItemView {{
-                background-color: {theme.background_secondary};
+                background-color: {theme.background_elevated};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
-                border-radius: {metrics.radius_small}px;
+                border-radius: {metrics.radius_medium}px;
                 selection-background-color: {theme.accent};
                 outline: none;
                 padding: {metrics.padding_small}px;
@@ -110,11 +109,12 @@ class ModelSelector(QFrame):
         # Populate with available models
         self._populate_models()
 
-        # Style the frame
+        # Premium frame styling
         self.setStyleSheet(f"""
             ModelSelector {{
-                background-color: {theme.background_secondary};
-                border-radius: {metrics.radius_medium}px;
+                background-color: {theme.background_elevated};
+                border-radius: {metrics.radius_large}px;
+                border: 1px solid {theme.border_subtle};
             }}
         """)
 
@@ -189,7 +189,7 @@ class ModelSelector(QFrame):
 
 
 class ContextBudgetIndicator(QFrame):
-    """Visual indicator for context window usage."""
+    """Premium visual indicator for context window usage."""
 
     def __init__(self, parent: QWidget | None = None):
         """Initialize the indicator.
@@ -201,32 +201,31 @@ class ContextBudgetIndicator(QFrame):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Set up the indicator UI."""
+        """Set up the premium indicator UI."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
-            metrics.padding_medium,
-            metrics.padding_medium,
-            metrics.padding_medium,
-            metrics.padding_medium,
+            metrics.padding_large,
+            metrics.padding_large,
+            metrics.padding_large,
+            metrics.padding_large,
         )
         layout.setSpacing(metrics.padding_small)
 
-        # Label
-        label = QLabel("Context Budget")
+        # Section label
+        label = QLabel("CONTEXT BUDGET")
         label.setStyleSheet(f"""
             QLabel {{
-                color: {theme.text_secondary};
+                color: {theme.text_muted};
                 font-size: {metrics.font_small}px;
                 font-weight: 600;
                 font-family: {fonts.ui};
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
+                letter-spacing: 1px;
                 background: transparent;
             }}
         """)
         layout.addWidget(label)
 
-        # Progress bar
+        # Premium progress bar
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -242,16 +241,18 @@ class ContextBudgetIndicator(QFrame):
                 color: {theme.text_muted};
                 font-size: {metrics.font_small}px;
                 font-family: {fonts.mono};
+                font-weight: 500;
                 background: transparent;
             }}
         """)
         layout.addWidget(self.token_label)
 
-        # Style the frame
+        # Premium frame styling
         self.setStyleSheet(f"""
             ContextBudgetIndicator {{
-                background-color: {theme.background_secondary};
-                border-radius: {metrics.radius_medium}px;
+                background-color: {theme.background_elevated};
+                border-radius: {metrics.radius_large}px;
+                border: 1px solid {theme.border_subtle};
             }}
         """)
 
@@ -274,35 +275,46 @@ class ContextBudgetIndicator(QFrame):
     def _update_progress_style(self, percentage: int) -> None:
         """Update progress bar color based on percentage.
 
-        Uses gradient: green (< 50%) → yellow (50-70%) → orange (70-85%) → red (85%+)
+        Premium gradient colors based on usage level.
 
         Args:
             percentage: Current percentage
         """
-        if percentage >= 85:
+        if percentage >= 90:
             color = theme.budget_red
-        elif percentage >= 70:
+        elif percentage >= 80:
             color = theme.budget_orange
-        elif percentage >= 50:
+        elif percentage >= 60:
             color = theme.budget_yellow
         else:
             color = theme.budget_green
 
         self.progress.setStyleSheet(f"""
             QProgressBar {{
-                background-color: {theme.background_tertiary};
-                border: none;
-                border-radius: 3px;
+                background-color: {theme.background};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_medium}px;
             }}
             QProgressBar::chunk {{
                 background-color: {color};
-                border-radius: 3px;
+                border-radius: 5px;
+            }}
+        """)
+
+        # Update label color to match
+        self.token_label.setStyleSheet(f"""
+            QLabel {{
+                color: {color};
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.mono};
+                font-weight: 500;
+                background: transparent;
             }}
         """)
 
 
 class DocumentPanel(QFrame):
-    """Document attachment panel for RAG."""
+    """Premium document attachment panel for RAG."""
 
     document_added = Signal(str)  # Emits file path
     document_removed = Signal(str)  # Emits doc_id
@@ -319,32 +331,31 @@ class DocumentPanel(QFrame):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Set up the document panel UI."""
+        """Set up the premium document panel UI."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
-            metrics.padding_medium,
-            metrics.padding_medium,
-            metrics.padding_medium,
-            metrics.padding_medium,
+            metrics.padding_large,
+            metrics.padding_large,
+            metrics.padding_large,
+            metrics.padding_large,
         )
         layout.setSpacing(metrics.padding_small)
 
-        # Label
-        label = QLabel("Documents")
+        # Section label
+        label = QLabel("DOCUMENTS")
         label.setStyleSheet(f"""
             QLabel {{
-                color: {theme.text_secondary};
+                color: {theme.text_muted};
                 font-size: {metrics.font_small}px;
                 font-weight: 600;
                 font-family: {fonts.ui};
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
+                letter-spacing: 1px;
                 background: transparent;
             }}
         """)
         layout.addWidget(label)
 
-        # Document list
+        # Premium document list
         self.doc_list = QListWidget()
         self.doc_list.setMaximumHeight(120)
         self.doc_list.setStyleSheet(f"""
@@ -352,19 +363,22 @@ class DocumentPanel(QFrame):
                 background-color: {theme.background};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
-                border-radius: {metrics.radius_small}px;
+                border-radius: {metrics.radius_medium}px;
                 font-size: {metrics.font_small}px;
                 font-family: {fonts.ui};
+                outline: none;
             }}
             QListWidget::item {{
-                padding: {metrics.padding_small}px;
+                padding: {metrics.padding_small}px {metrics.padding_medium}px;
                 border-radius: {metrics.radius_small}px;
+                border-left: 3px solid transparent;
             }}
             QListWidget::item:selected {{
-                background-color: {theme.accent};
+                background-color: {theme.accent_subtle};
+                border-left: 3px solid {theme.accent};
             }}
             QListWidget::item:hover {{
-                background-color: {theme.background_tertiary};
+                background-color: {theme.background_elevated};
             }}
         """)
         self.doc_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -375,22 +389,22 @@ class DocumentPanel(QFrame):
         button_row = QHBoxLayout()
         button_row.setSpacing(metrics.padding_small)
 
-        # Add button
+        # Add button - dashed border style
         self.add_button = QPushButton("+ Add")
         self.add_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: transparent;
-                color: {theme.text_secondary};
+                color: {theme.text_muted};
                 border: 1px dashed {theme.border};
                 border-radius: {metrics.radius_small}px;
-                padding: {metrics.padding_small}px;
+                padding: {metrics.padding_small}px {metrics.padding_medium}px;
                 font-size: {metrics.font_small}px;
                 font-family: {fonts.ui};
             }}
             QPushButton:hover {{
-                background-color: {theme.background_tertiary};
-                color: {theme.text_primary};
+                background-color: {theme.background_elevated};
+                color: {theme.accent};
                 border-color: {theme.accent};
             }}
         """)
@@ -403,15 +417,15 @@ class DocumentPanel(QFrame):
         self.clear_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: transparent;
-                color: {theme.text_muted};
-                border: 1px solid {theme.border};
+                color: {theme.text_disabled};
+                border: 1px solid {theme.border_subtle};
                 border-radius: {metrics.radius_small}px;
-                padding: {metrics.padding_small}px;
+                padding: {metrics.padding_small}px {metrics.padding_medium}px;
                 font-size: {metrics.font_small}px;
                 font-family: {fonts.ui};
             }}
             QPushButton:hover {{
-                background-color: {theme.background_tertiary};
+                background-color: {theme.background_elevated};
                 color: {theme.error};
                 border-color: {theme.error};
             }}
@@ -421,11 +435,12 @@ class DocumentPanel(QFrame):
 
         layout.addLayout(button_row)
 
-        # Style the frame
+        # Premium frame styling
         self.setStyleSheet(f"""
             DocumentPanel {{
-                background-color: {theme.background_secondary};
-                border-radius: {metrics.radius_medium}px;
+                background-color: {theme.background_elevated};
+                border-radius: {metrics.radius_large}px;
+                border: 1px solid {theme.border_subtle};
             }}
         """)
 
@@ -455,16 +470,16 @@ class DocumentPanel(QFrame):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
-                background-color: {theme.background_secondary};
+                background-color: {theme.background_elevated};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
-                border-radius: {metrics.radius_small}px;
+                border-radius: {metrics.radius_medium}px;
                 padding: {metrics.padding_small}px;
                 font-family: {fonts.ui};
                 font-size: {metrics.font_normal}px;
             }}
             QMenu::item {{
-                padding: {metrics.padding_small}px {metrics.padding_medium}px;
+                padding: {metrics.padding_small}px {metrics.padding_large}px;
                 border-radius: {metrics.radius_small}px;
             }}
             QMenu::item:selected {{
@@ -523,7 +538,7 @@ class DocumentPanel(QFrame):
 
 
 class Sidebar(QWidget):
-    """Sidebar panel with model selector, context indicator, and document panel."""
+    """Premium sidebar panel with model selector, context indicator, and document panel."""
 
     model_changed = Signal(str)  # Emits model_id
     regenerate_requested = Signal()
@@ -542,13 +557,13 @@ class Sidebar(QWidget):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Set up the sidebar UI."""
+        """Set up the premium sidebar UI."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
             metrics.padding_medium,
+            metrics.padding_large,
             metrics.padding_medium,
-            metrics.padding_medium,
-            metrics.padding_medium,
+            metrics.padding_large,
         )
         layout.setSpacing(metrics.padding_medium)
 
@@ -568,36 +583,38 @@ class Sidebar(QWidget):
         self.document_panel.documents_cleared.connect(self.documents_cleared)
         layout.addWidget(self.document_panel)
 
-        # Regenerate button
-        self.regenerate_button = QPushButton("Regenerate (Ctrl+R)")
+        # Regenerate button - secondary style
+        self.regenerate_button = QPushButton("Regenerate")
         self.regenerate_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.regenerate_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {theme.background_secondary};
-                color: {theme.text_primary};
+                background-color: transparent;
+                color: {theme.text_secondary};
                 border: 1px solid {theme.border};
                 border-radius: {metrics.radius_medium}px;
-                padding: {metrics.padding_medium}px {metrics.padding_medium}px;
+                padding: {metrics.padding_medium}px;
                 font-size: {metrics.font_normal}px;
                 font-family: {fonts.ui};
             }}
             QPushButton:hover {{
-                background-color: {theme.background_tertiary};
+                background-color: {theme.background_elevated};
+                color: {theme.text_primary};
                 border-color: {theme.accent};
             }}
             QPushButton:pressed {{
                 background-color: {theme.accent_pressed};
+                color: white;
             }}
             QPushButton:disabled {{
-                color: {theme.text_muted};
-                background-color: {theme.background_tertiary};
+                color: {theme.text_disabled};
+                border-color: {theme.border_subtle};
             }}
         """)
         self.regenerate_button.clicked.connect(self.regenerate_requested)
         layout.addWidget(self.regenerate_button)
 
         # Inspector toggle button
-        self.inspector_button = QPushButton("Inspector (Ctrl+I)")
+        self.inspector_button = QPushButton("Inspector")
         self.inspector_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._inspector_active = False
         self._update_inspector_button_style()
@@ -608,13 +625,13 @@ class Sidebar(QWidget):
         layout.addStretch()
 
         # Set width
-        self.setFixedWidth(240)
+        self.setFixedWidth(260)
 
-        # Style
+        # Premium sidebar styling - recessed background
         self.setStyleSheet(f"""
             Sidebar {{
                 background-color: {theme.background_tertiary};
-                border-right: 1px solid {theme.border};
+                border-right: 1px solid {theme.border_subtle};
             }}
         """)
 
@@ -633,7 +650,7 @@ class Sidebar(QWidget):
                     color: white;
                     border: none;
                     border-radius: {metrics.radius_medium}px;
-                    padding: {metrics.padding_medium}px {metrics.padding_medium}px;
+                    padding: {metrics.padding_medium}px;
                     font-size: {metrics.font_normal}px;
                     font-family: {fonts.ui};
                     font-weight: 500;
@@ -645,16 +662,16 @@ class Sidebar(QWidget):
         else:
             self.inspector_button.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: {theme.background_secondary};
-                    color: {theme.text_secondary};
-                    border: 1px solid {theme.border};
+                    background-color: transparent;
+                    color: {theme.text_muted};
+                    border: 1px solid {theme.border_subtle};
                     border-radius: {metrics.radius_medium}px;
-                    padding: {metrics.padding_medium}px {metrics.padding_medium}px;
+                    padding: {metrics.padding_medium}px;
                     font-size: {metrics.font_normal}px;
                     font-family: {fonts.ui};
                 }}
                 QPushButton:hover {{
-                    background-color: {theme.background_tertiary};
+                    background-color: {theme.background_elevated};
                     color: {theme.text_primary};
                     border-color: {theme.accent};
                 }}

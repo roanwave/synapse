@@ -1,4 +1,4 @@
-"""Chat panel for displaying conversation history."""
+"""Chat panel for displaying conversation history - Premium styling."""
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -9,8 +9,9 @@ from PySide6.QtWidgets import (
     QFrame,
     QSizePolicy,
     QTextBrowser,
+    QGraphicsOpacityEffect,
 )
-from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, Property
+from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, Property, QPoint
 from PySide6.QtGui import QFont, QDesktopServices
 
 from ..config.themes import theme, fonts, metrics
@@ -18,7 +19,7 @@ from ..utils.markdown_renderer import render_markdown
 
 
 class TypingIndicator(QWidget):
-    """Animated typing indicator (three pulsing dots)."""
+    """Premium animated typing indicator (three pulsing dots with wave effect)."""
 
     def __init__(self, parent: QWidget | None = None):
         """Initialize the typing indicator.
@@ -29,78 +30,79 @@ class TypingIndicator(QWidget):
         super().__init__(parent)
         self._dots: list[QLabel] = []
         self._timers: list[QTimer] = []
+        self._current_states: list[bool] = [False, False, False]
+        self._animation_index = 0
+        self._wave_timer: QTimer | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         """Set up the indicator UI."""
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(6)
 
-        # Create three dots
+        # Create three dots with premium styling
         for i in range(3):
             dot = QLabel()
-            dot.setFixedSize(6, 6)
+            dot.setFixedSize(8, 8)
             dot.setStyleSheet(f"""
                 QLabel {{
                     background-color: {theme.text_muted};
-                    border-radius: 3px;
+                    border-radius: 4px;
                 }}
             """)
             self._dots.append(dot)
             layout.addWidget(dot)
 
         layout.addStretch()
-        self.setFixedHeight(20)
+        self.setFixedHeight(24)
 
     def start(self) -> None:
-        """Start the animation."""
-        # Stagger the animations
-        for i, dot in enumerate(self._dots):
-            timer = QTimer(self)
-            timer.timeout.connect(lambda d=dot: self._pulse_dot(d))
-            timer.start(600)  # Pulse interval
-            # Offset each dot
-            QTimer.singleShot(i * 200, timer.start)
-            self._timers.append(timer)
+        """Start the wave animation."""
+        self._animation_index = 0
+        self._wave_timer = QTimer(self)
+        self._wave_timer.timeout.connect(self._wave_step)
+        self._wave_timer.start(150)  # Fast wave effect
 
     def stop(self) -> None:
         """Stop the animation."""
-        for timer in self._timers:
-            timer.stop()
-        self._timers.clear()
+        if self._wave_timer:
+            self._wave_timer.stop()
+            self._wave_timer = None
 
-        # Reset dots
+        # Reset all dots to dim
         for dot in self._dots:
             dot.setStyleSheet(f"""
                 QLabel {{
                     background-color: {theme.text_muted};
-                    border-radius: 3px;
+                    border-radius: 4px;
                 }}
             """)
 
-    def _pulse_dot(self, dot: QLabel) -> None:
-        """Pulse a single dot."""
-        # Simple toggle between bright and dim
-        current = dot.styleSheet()
-        if theme.text_muted in current:
-            dot.setStyleSheet(f"""
-                QLabel {{
-                    background-color: {theme.accent};
-                    border-radius: 3px;
-                }}
-            """)
-        else:
-            dot.setStyleSheet(f"""
-                QLabel {{
-                    background-color: {theme.text_muted};
-                    border-radius: 3px;
-                }}
-            """)
+    def _wave_step(self) -> None:
+        """Animate one step of the wave."""
+        # Reset previous dot
+        prev_index = (self._animation_index - 1) % 3
+        self._dots[prev_index].setStyleSheet(f"""
+            QLabel {{
+                background-color: {theme.text_muted};
+                border-radius: 4px;
+            }}
+        """)
+
+        # Light up current dot with accent color
+        self._dots[self._animation_index].setStyleSheet(f"""
+            QLabel {{
+                background-color: {theme.accent};
+                border-radius: 4px;
+            }}
+        """)
+
+        self._animation_index = (self._animation_index + 1) % 3
 
 
 class MessageBubble(QFrame):
-    """A single message bubble in the chat."""
+    """Premium message bubble with gradient backgrounds and shadows."""
 
     def __init__(self, role: str, content: str = "", parent: QWidget | None = None):
         """Initialize the message bubble.
@@ -112,52 +114,95 @@ class MessageBubble(QFrame):
         """
         super().__init__(parent)
         self.role = role
-        self._raw_content = content  # Store raw markdown
+        self._raw_content = content
         self._typing_indicator: TypingIndicator | None = None
         self._setup_ui(content)
 
     def _setup_ui(self, content: str) -> None:
-        """Set up the bubble UI."""
+        """Set up the bubble UI with premium styling."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(1)  # Minimal gap between label and content
+        layout.setSpacing(4)
 
-        # Minimal role indicator - just initials, very subtle
-        role_text = "You" if self.role == "user" else "Assistant"
+        # Role label - subtle, premium
+        role_text = "You" if self.role == "user" else "Synapse"
         role_label = QLabel(role_text)
         role_label.setStyleSheet(f"""
             QLabel {{
                 color: {theme.text_muted};
-                font-size: 10px;
-                font-weight: 500;
+                font-size: 11px;
+                font-weight: 600;
                 font-family: {fonts.ui};
                 background: transparent;
+                letter-spacing: 0.3px;
             }}
         """)
         layout.addWidget(role_label)
 
+        # Content container for styling
+        content_frame = QFrame()
+        content_layout = QVBoxLayout(content_frame)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+
         # Content browser (supports HTML/markdown rendering)
         self.content_browser = QTextBrowser()
         self.content_browser.setOpenExternalLinks(True)
-        self.content_browser.setOpenLinks(False)  # Handle links manually
+        self.content_browser.setOpenLinks(False)
         self.content_browser.anchorClicked.connect(self._on_link_clicked)
 
         # Remove all internal document margins
         self.content_browser.document().setDocumentMargin(0)
 
-        # Style the text browser - clean and minimal
-        self.content_browser.setStyleSheet(f"""
-            QTextBrowser {{
-                background-color: transparent;
-                border: none;
-                color: {theme.text_primary};
-                font-size: {metrics.font_medium}px;
-                font-family: {fonts.chat};
-                selection-background-color: {theme.accent};
-                padding: 0;
-                margin: 0;
-            }}
-        """)
+        # Premium styling based on role
+        if self.role == "user":
+            # User messages: Gradient background with shadow
+            content_frame.setStyleSheet(f"""
+                QFrame {{
+                    background: qlineargradient(
+                        x1:0, y1:0, x2:1, y2:1,
+                        stop:0 {theme.user_bubble_start},
+                        stop:1 {theme.user_bubble_end}
+                    );
+                    border-radius: {metrics.radius_large}px;
+                    padding: {metrics.padding_medium}px {metrics.padding_large}px;
+                }}
+            """)
+            self.content_browser.setStyleSheet(f"""
+                QTextBrowser {{
+                    background-color: transparent;
+                    border: none;
+                    color: #ffffff;
+                    font-size: {metrics.font_medium}px;
+                    font-family: {fonts.chat};
+                    selection-background-color: rgba(255, 255, 255, 0.3);
+                    padding: 0;
+                    margin: 0;
+                }}
+            """)
+        else:
+            # Assistant messages: Elevated surface with accent bar
+            content_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {theme.assistant_bubble};
+                    border: 1px solid {theme.border};
+                    border-left: 3px solid {theme.accent};
+                    border-radius: {metrics.radius_large}px;
+                    padding: {metrics.padding_large}px 20px;
+                }}
+            """)
+            self.content_browser.setStyleSheet(f"""
+                QTextBrowser {{
+                    background-color: transparent;
+                    border: none;
+                    color: {theme.text_primary};
+                    font-size: {metrics.font_medium}px;
+                    font-family: {fonts.chat};
+                    selection-background-color: {theme.selection};
+                    padding: 0;
+                    margin: 0;
+                }}
+            """)
 
         # Make it auto-resize to content
         self.content_browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -168,10 +213,15 @@ class MessageBubble(QFrame):
         if content:
             self._render_content(content)
 
-        layout.addWidget(self.content_browser)
+        content_layout.addWidget(self.content_browser)
+        layout.addWidget(content_frame)
 
-        # Clean styling - no borders, no heavy backgrounds
-        # Just transparent frames, differentiated by text color only
+        # Set max width based on role
+        if self.role == "user":
+            self.setMaximumWidth(800)  # 75% of typical width
+        else:
+            pass  # Assistant messages can be full width
+
         self.setStyleSheet("""
             MessageBubble {
                 background-color: transparent;
@@ -187,13 +237,13 @@ class MessageBubble(QFrame):
         Args:
             content: Markdown text to render
         """
-        html = render_markdown(content)
+        html = render_markdown(content, is_user=self.role == "user")
         self.content_browser.setHtml(html)
 
-        # Adjust height to content - minimal padding
+        # Adjust height to content
         self.content_browser.document().setTextWidth(self.content_browser.viewport().width())
         doc_height = self.content_browser.document().size().height()
-        self.content_browser.setMinimumHeight(int(doc_height) + 2)
+        self.content_browser.setMinimumHeight(int(doc_height) + 4)
 
     def _on_link_clicked(self, url) -> None:
         """Handle link clicks by opening in external browser.
@@ -245,7 +295,7 @@ class MessageBubble(QFrame):
 
 
 class ChatPanel(QWidget):
-    """Panel for displaying the conversation history."""
+    """Premium panel for displaying the conversation history."""
 
     def __init__(self, parent: QWidget | None = None):
         """Initialize the chat panel.
@@ -259,11 +309,11 @@ class ChatPanel(QWidget):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Set up the panel UI."""
+        """Set up the panel UI with premium styling."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Create scroll area
+        # Create scroll area with premium styling
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(
@@ -274,7 +324,7 @@ class ChatPanel(QWidget):
         )
         self.scroll_area.setStyleSheet(f"""
             QScrollArea {{
-                background-color: {theme.background};
+                background-color: {theme.background_secondary};
                 border: none;
             }}
         """)
@@ -283,14 +333,14 @@ class ChatPanel(QWidget):
         self.messages_container = QWidget()
         self.messages_container.setStyleSheet(f"""
             QWidget {{
-                background-color: {theme.background};
+                background-color: {theme.background_secondary};
             }}
         """)
         self.messages_layout = QVBoxLayout(self.messages_container)
-        # Ultra-tight conversation flow
-        self.messages_layout.setContentsMargins(12, 6, 12, 6)
-        self.messages_layout.setSpacing(2)  # Near-zero spacing between messages
-        self.messages_layout.addStretch()  # Push messages to top initially
+        # Premium spacing
+        self.messages_layout.setContentsMargins(24, 16, 24, 16)
+        self.messages_layout.setSpacing(16)  # Good spacing between messages
+        self.messages_layout.addStretch()
 
         self.scroll_area.setWidget(self.messages_container)
         layout.addWidget(self.scroll_area)
@@ -302,12 +352,12 @@ class ChatPanel(QWidget):
             content: Message text
         """
         bubble = MessageBubble("user", content)
-        self._add_bubble(bubble)
+        self._add_bubble(bubble, align_right=True)
 
     def start_assistant_message(self) -> None:
         """Start a new assistant message for streaming."""
         bubble = MessageBubble("assistant", "")
-        bubble.show_typing()  # Show typing indicator
+        bubble.show_typing()
         self._current_assistant_bubble = bubble
         self._add_bubble(bubble)
 
@@ -341,6 +391,7 @@ class ChatPanel(QWidget):
             self._current_assistant_bubble.hide_typing()
 
         bubble = MessageBubble("assistant", f"**Error:** {error}")
+        # Style with error color
         bubble.content_browser.setStyleSheet(f"""
             QTextBrowser {{
                 background-color: transparent;
@@ -348,7 +399,7 @@ class ChatPanel(QWidget):
                 color: {theme.error};
                 font-size: {metrics.font_medium}px;
                 font-family: {fonts.chat};
-                selection-background-color: {theme.accent};
+                selection-background-color: {theme.selection};
                 padding: 0;
                 margin: 0;
             }}
@@ -356,26 +407,36 @@ class ChatPanel(QWidget):
         self._add_bubble(bubble)
         self._current_assistant_bubble = None
 
-    def _add_bubble(self, bubble: MessageBubble) -> None:
-        """Add a bubble to the layout.
+    def _add_bubble(self, bubble: MessageBubble, align_right: bool = False) -> None:
+        """Add a bubble to the layout with optional alignment.
 
         Args:
             bubble: The message bubble to add
+            align_right: Whether to align the bubble to the right (for user messages)
         """
         # Remove the stretch if this is the first message
         if not self._bubbles:
-            # Remove the stretch item
             item = self.messages_layout.takeAt(0)
             if item:
                 del item
 
         self._bubbles.append(bubble)
-        self.messages_layout.addWidget(bubble)
 
-        # Add stretch after messages to prevent them from expanding
+        if align_right:
+            # Create a container to align user messages to the right
+            container = QWidget()
+            container_layout = QHBoxLayout(container)
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.addStretch()
+            container_layout.addWidget(bubble)
+            self.messages_layout.addWidget(container)
+        else:
+            self.messages_layout.addWidget(bubble)
+
+        # Add stretch after messages
         self.messages_layout.addStretch()
 
-        # Scroll to bottom after a short delay to allow layout
+        # Scroll to bottom with smooth delay
         QTimer.singleShot(10, self._scroll_to_bottom)
 
     def _scroll_to_bottom(self) -> None:
@@ -390,7 +451,7 @@ class ChatPanel(QWidget):
             content: Message text
         """
         bubble = MessageBubble("assistant", content)
-        # Style as a system message - muted appearance
+        # Style as a system message - muted, subtle
         bubble.content_browser.setStyleSheet(f"""
             QTextBrowser {{
                 background-color: transparent;
@@ -399,7 +460,7 @@ class ChatPanel(QWidget):
                 font-size: {metrics.font_small}px;
                 font-family: {fonts.chat};
                 font-style: italic;
-                selection-background-color: {theme.accent};
+                selection-background-color: {theme.selection};
                 padding: 0;
                 margin: 0;
             }}
@@ -408,9 +469,12 @@ class ChatPanel(QWidget):
 
     def clear(self) -> None:
         """Clear all messages from the chat."""
-        for bubble in self._bubbles:
-            self.messages_layout.removeWidget(bubble)
-            bubble.deleteLater()
+        # Remove all widgets from layout
+        while self.messages_layout.count():
+            item = self.messages_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
         self._bubbles.clear()
         self._current_assistant_bubble = None
 

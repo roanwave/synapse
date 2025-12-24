@@ -1,6 +1,7 @@
-"""Markdown to HTML renderer for chat messages.
+"""Premium markdown to HTML renderer for chat messages.
 
-Converts markdown text to styled HTML that matches the app's dark theme.
+Converts markdown text to styled HTML with premium dark theme aesthetics.
+Inspired by Linear, Raycast, and high-end SaaS applications.
 """
 
 import re
@@ -18,108 +19,129 @@ except ImportError:
 from ..config.themes import theme, fonts, metrics
 
 
-def get_markdown_css() -> str:
-    """Get CSS styles for rendered markdown content.
+def get_markdown_css(is_user: bool = False) -> str:
+    """Get premium CSS styles for rendered markdown content.
+
+    Args:
+        is_user: Whether this is for a user message (affects colors)
 
     Returns:
         CSS stylesheet string
     """
+    # Text color based on message type
+    text_color = "#ffffff" if is_user else theme.text_primary
+    text_secondary = "rgba(255, 255, 255, 0.85)" if is_user else theme.text_secondary
+    link_color = "#a5b4fc" if is_user else theme.accent_hover
+    link_hover = "#c4b5fd" if is_user else "#a5b4fc"
+    code_bg = "rgba(0, 0, 0, 0.2)" if is_user else theme.code_bg
+    code_border = "rgba(255, 255, 255, 0.1)" if is_user else theme.code_border
+    blockquote_border = "rgba(255, 255, 255, 0.4)" if is_user else theme.accent
+    blockquote_bg = "rgba(0, 0, 0, 0.15)" if is_user else theme.background_elevated
+    table_border = "rgba(255, 255, 255, 0.2)" if is_user else theme.border
+    table_header_bg = "rgba(0, 0, 0, 0.2)" if is_user else theme.background_tertiary
+    table_alt_bg = "rgba(0, 0, 0, 0.1)" if is_user else theme.background_secondary
+
     return f"""
         body {{
-            color: {theme.text_primary};
+            color: {text_color};
             font-family: {fonts.chat};
             font-size: {metrics.font_medium}px;
-            line-height: 1.3;
+            line-height: 1.5;
             margin: 0;
             padding: 0;
         }}
 
-        /* Headings - minimal spacing */
+        /* Headings - Premium typography */
         h1, h2, h3, h4, h5, h6 {{
-            color: {theme.text_primary};
+            color: {text_color};
             font-family: {fonts.ui};
-            margin-top: 4px;
-            margin-bottom: 2px;
+            margin-top: 12px;
+            margin-bottom: 6px;
             font-weight: 600;
+            letter-spacing: -0.01em;
         }}
-        h1 {{ font-size: 1.2em; }}
-        h2 {{ font-size: 1.15em; }}
+        h1 {{ font-size: 1.3em; }}
+        h2 {{ font-size: 1.2em; }}
         h3 {{ font-size: 1.1em; }}
         h4, h5, h6 {{ font-size: 1em; }}
 
-        /* Paragraphs - tight */
+        /* Paragraphs */
         p {{
             margin-top: 0;
-            margin-bottom: 3px;
+            margin-bottom: 8px;
         }}
 
         /* Bold and italic */
         strong, b {{
             font-weight: 600;
-            color: {theme.text_primary};
+            color: {text_color};
         }}
         em, i {{
             font-style: italic;
         }}
 
-        /* Links */
+        /* Links - Premium styling */
         a {{
-            color: {theme.accent};
+            color: {link_color};
             text-decoration: none;
+            transition: color 150ms ease;
         }}
         a:hover {{
+            color: {link_hover};
             text-decoration: underline;
         }}
 
-        /* Lists - very tight */
+        /* Lists */
         ul, ol {{
             margin-top: 0;
-            margin-bottom: 3px;
-            padding-left: 18px;
+            margin-bottom: 8px;
+            padding-left: 20px;
         }}
         li {{
-            margin-bottom: 0;
-            padding-bottom: 0;
+            margin-bottom: 4px;
+            line-height: 1.5;
         }}
         li p {{
-            margin-top: 1px;
-            margin-bottom: 2px;
+            margin: 0;
         }}
 
-        /* Code - inline */
+        /* Inline code - Premium styling */
         code {{
             font-family: {fonts.mono};
             font-size: 0.9em;
-            background-color: {theme.background_tertiary};
-            padding: 1px 3px;
-            border-radius: 2px;
-            color: {theme.text_primary};
+            background-color: {code_bg};
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: {text_color};
         }}
 
-        /* Code blocks */
+        /* Code blocks - GitHub dark inspired */
         pre {{
             font-family: {fonts.mono};
-            font-size: 0.9em;
-            background-color: {theme.background_tertiary};
-            padding: 6px;
-            border-radius: 3px;
+            font-size: 13px;
+            background-color: {code_bg};
+            padding: 12px 16px;
+            border-radius: 8px;
             overflow-x: auto;
-            margin: 3px 0;
-            border: 1px solid {theme.border};
+            margin: 8px 0;
+            border: 1px solid {code_border};
+            line-height: 1.45;
         }}
         pre code {{
             background: none;
             padding: 0;
             border-radius: 0;
+            font-size: inherit;
         }}
 
-        /* Blockquotes */
+        /* Blockquotes - Premium accent */
         blockquote {{
-            margin: 3px 0;
-            padding: 2px 8px;
-            border-left: 2px solid {theme.accent};
-            background-color: {theme.background_secondary};
-            color: {theme.text_secondary};
+            margin: 8px 0;
+            padding: 8px 16px;
+            border-left: 3px solid {blockquote_border};
+            background-color: {blockquote_bg};
+            border-radius: 0 6px 6px 0;
+            color: {text_secondary};
         }}
         blockquote p {{
             margin: 0;
@@ -128,36 +150,47 @@ def get_markdown_css() -> str:
         /* Horizontal rule */
         hr {{
             border: none;
-            border-top: 1px solid {theme.border};
-            margin: 4px 0;
+            border-top: 1px solid {table_border};
+            margin: 16px 0;
         }}
 
-        /* Tables */
+        /* Tables - Premium styling */
         table {{
             border-collapse: collapse;
-            margin: 3px 0;
+            margin: 8px 0;
             width: 100%;
+            border-radius: 6px;
+            overflow: hidden;
         }}
         th, td {{
-            border: 1px solid {theme.border};
-            padding: 2px 6px;
+            border: 1px solid {table_border};
+            padding: 8px 12px;
             text-align: left;
         }}
         th {{
-            background-color: {theme.background_tertiary};
+            background-color: {table_header_bg};
             font-weight: 600;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }}
         tr:nth-child(even) {{
-            background-color: {theme.background_secondary};
+            background-color: {table_alt_bg};
+        }}
+
+        /* Selection */
+        ::selection {{
+            background-color: {theme.selection if not is_user else "rgba(255, 255, 255, 0.3)"};
         }}
     """
 
 
-def render_markdown(text: str) -> str:
-    """Convert markdown text to styled HTML.
+def render_markdown(text: str, is_user: bool = False) -> str:
+    """Convert markdown text to premium styled HTML.
 
     Args:
         text: Markdown formatted text
+        is_user: Whether this is a user message (affects styling)
 
     Returns:
         HTML string with inline styles
@@ -171,7 +204,7 @@ def render_markdown(text: str) -> str:
             extensions=[
                 'fenced_code',
                 'tables',
-                'nl2br',  # Convert newlines to <br>
+                'nl2br',
             ]
         )
         html_content = md.convert(text)
@@ -180,7 +213,7 @@ def render_markdown(text: str) -> str:
         html_content = _basic_markdown_to_html(text)
 
     # Wrap in styled container
-    css = get_markdown_css()
+    css = get_markdown_css(is_user)
     html = f"""
     <html>
     <head>

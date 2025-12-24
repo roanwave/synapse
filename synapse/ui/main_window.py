@@ -138,10 +138,10 @@ class MainWindow(QMainWindow):
         self.chat_panel = ChatPanel()
         chat_layout.addWidget(self.chat_panel, stretch=1)
 
-        # Divider
+        # Premium divider
         divider = QWidget()
         divider.setFixedHeight(1)
-        divider.setStyleSheet(f"background-color: {theme.border};")
+        divider.setStyleSheet(f"background-color: {theme.border_subtle};")
         chat_layout.addWidget(divider)
 
         # Input panel
@@ -157,14 +157,15 @@ class MainWindow(QMainWindow):
         self._inspector_panel.hide()
         main_layout.addWidget(self._inspector_panel)
 
-        # Status bar
+        # Premium status bar
         self.status_bar = QStatusBar()
         self.status_bar.setStyleSheet(f"""
             QStatusBar {{
                 background-color: {theme.background_tertiary};
-                border-top: 1px solid {theme.border};
+                border-top: 1px solid {theme.border_subtle};
                 font-family: {fonts.ui};
                 font-size: {metrics.font_small}px;
+                color: {theme.text_muted};
             }}
         """)
         self.setStatusBar(self.status_bar)
@@ -173,9 +174,11 @@ class MainWindow(QMainWindow):
         self.token_label = QLabel("Tokens: 0")
         self.token_label.setStyleSheet(f"""
             QLabel {{
-                color: {theme.text_secondary};
-                padding: 2px {metrics.padding_medium}px;
+                color: {theme.text_muted};
+                padding: 4px {metrics.padding_medium}px;
                 font-family: {fonts.mono};
+                font-size: {metrics.font_small}px;
+                font-weight: 500;
             }}
         """)
         self.status_bar.addPermanentWidget(self.token_label)
@@ -185,17 +188,20 @@ class MainWindow(QMainWindow):
         self.model_label.setStyleSheet(f"""
             QLabel {{
                 color: {theme.text_secondary};
-                padding: 2px {metrics.padding_medium}px;
+                padding: 4px {metrics.padding_medium}px;
+                font-size: {metrics.font_small}px;
             }}
         """)
         self.status_bar.addPermanentWidget(self.model_label)
 
-        # Intent label in status bar
+        # Intent label in status bar - with accent color
         self.intent_label = QLabel("Mode: exploration")
         self.intent_label.setStyleSheet(f"""
             QLabel {{
-                color: {theme.text_muted};
-                padding: 2px {metrics.padding_medium}px;
+                color: {theme.accent};
+                padding: 4px {metrics.padding_medium}px;
+                font-size: {metrics.font_small}px;
+                font-weight: 500;
             }}
         """)
         self.status_bar.addPermanentWidget(self.intent_label)
@@ -242,47 +248,54 @@ class MainWindow(QMainWindow):
         save_shortcut.activated.connect(self._on_save_session)
 
     def _setup_menu_bar(self) -> None:
-        """Set up the main menu bar."""
+        """Set up the premium main menu bar."""
         menu_bar = self.menuBar()
 
-        # Style the menu bar to match dark theme
+        # Premium menu bar styling
         menu_bar.setStyleSheet(f"""
             QMenuBar {{
-                background-color: #1E1E1E;
-                color: #F0F0F0;
-                border-bottom: 1px solid {theme.border};
+                background-color: {theme.background_tertiary};
+                color: {theme.text_primary};
+                border-bottom: 1px solid {theme.border_subtle};
                 padding: 2px 0;
                 font-family: {fonts.ui};
                 font-size: {metrics.font_normal}px;
             }}
             QMenuBar::item {{
-                padding: 4px 12px;
+                padding: 6px 14px;
                 background-color: transparent;
+                border-radius: {metrics.radius_small}px;
+                margin: 2px 2px;
             }}
             QMenuBar::item:selected {{
-                background-color: {theme.background_secondary};
+                background-color: {theme.background_elevated};
+                color: {theme.text_primary};
             }}
             QMenuBar::item:pressed {{
                 background-color: {theme.accent};
+                color: white;
             }}
             QMenu {{
-                background-color: #1E1E1E;
-                color: #F0F0F0;
+                background-color: {theme.background_elevated};
+                color: {theme.text_primary};
                 border: 1px solid {theme.border};
-                padding: 4px 0;
+                border-radius: {metrics.radius_medium}px;
+                padding: {metrics.padding_small}px;
                 font-family: {fonts.ui};
                 font-size: {metrics.font_normal}px;
             }}
             QMenu::item {{
-                padding: 6px 24px 6px 12px;
+                padding: {metrics.padding_small}px {metrics.padding_xlarge}px {metrics.padding_small}px {metrics.padding_medium}px;
+                border-radius: {metrics.radius_small}px;
             }}
             QMenu::item:selected {{
                 background-color: {theme.accent};
+                color: white;
             }}
             QMenu::separator {{
                 height: 1px;
-                background-color: {theme.border};
-                margin: 4px 8px;
+                background-color: {theme.border_subtle};
+                margin: {metrics.padding_small}px {metrics.padding_medium}px;
             }}
         """)
 

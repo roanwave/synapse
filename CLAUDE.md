@@ -1,8 +1,31 @@
-# CLAUDE.md — Project Synapse
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What This Is
 
 Single-user Windows desktop LLM chat client with invisible context management, document-aware RAG, and flow-state-preserving UX. This is a **private thinking environment**, not just a chatbot.
+
+## Build & Run Commands
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python main.py
+
+# Build standalone Windows executable
+python scripts/build_exe.py           # Creates dist/Synapse/ folder
+python scripts/build_exe.py --onefile  # Single .exe (slower startup)
+python scripts/build_exe.py --debug    # Include console for debugging
+
+# Generate app icon (optional, before build)
+python scripts/generate_icon.py
+
+# Create Windows shortcut
+python scripts/create_shortcut.py
+```
 
 ## Core Design Principles
 

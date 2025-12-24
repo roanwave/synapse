@@ -1,10 +1,6 @@
-"""Dark theme colors and styling for Synapse.
+"""Premium dark theme for Synapse.
 
-Premium aesthetic: sleek, minimalist, spacious.
-Fonts:
-- UI elements: Inter, Roboto (fallback to Segoe UI)
-- Chat messages: Segoe UI (Windows native)
-- Code/XML: JetBrains Mono, Fira Code (fallback to Consolas)
+Premium aesthetic inspired by Linear, Raycast, Arc Browser, and Stripe.
 """
 
 from dataclasses import dataclass
@@ -12,78 +8,97 @@ from dataclasses import dataclass
 
 @dataclass
 class ThemeColors:
-    """Color scheme for the application.
+    """Premium color scheme - $100/month SaaS aesthetic.
 
-    Based on VS Code dark theme aesthetic with custom accent.
+    Deep, rich colors with purposeful accents and subtle depth.
     """
 
-    # Base colors (Deep Charcoal palette)
-    background: str = "#1E1E1E"  # Main background - dark but not true black
-    background_secondary: str = "#252526"  # Surface/cards - subtle layering
-    background_tertiary: str = "#1A1A1A"  # Deeper areas
+    # Background layers (create depth through subtle variation)
+    background: str = "#0a0a0f"  # App background - almost black, slight blue tint
+    background_secondary: str = "#121218"  # Chat panel - elevated layer
+    background_tertiary: str = "#0d0d12"  # Sidebar - recessed slightly
+    background_elevated: str = "#1a1a22"  # Modals, dropdowns, cards
 
-    # Text colors
-    text_primary: str = "#F0F0F0"  # Near-white for high contrast
-    text_secondary: str = "#ABABAB"  # Muted text
-    text_muted: str = "#6E6E6E"  # Very muted/disabled text
+    # Text hierarchy
+    text_primary: str = "#f9fafb"  # Almost white, readable
+    text_secondary: str = "#d1d5db"  # Lighter gray
+    text_muted: str = "#9ca3af"  # Muted gray
+    text_disabled: str = "#6b7280"  # Very muted
 
-    # Accent colors (VS Code blue)
-    accent: str = "#007ACC"  # Primary accent
-    accent_hover: str = "#1A8AD4"  # Lighter on hover
-    accent_pressed: str = "#005A9E"  # Darker on press
-    accent_subtle: str = "#264F78"  # Very subtle accent
+    # Accent colors (purposeful and premium)
+    accent: str = "#6366f1"  # Primary indigo - professional, trustworthy
+    accent_hover: str = "#818cf8"  # Lighter indigo
+    accent_pressed: str = "#4f46e5"  # Darker indigo
+    accent_subtle: str = "rgba(99, 102, 241, 0.15)"  # Very subtle accent
+    accent_glow: str = "rgba(99, 102, 241, 0.4)"  # For shadows/glows
 
-    # Message bubble colors
-    user_bubble: str = "#005A8D"  # Dark accent blue for user
-    assistant_bubble: str = "#2D2D2D"  # Slightly lighter than background
+    # Secondary accent
+    secondary: str = "#8b5cf6"  # Purple - creative, premium
 
-    # Border and divider (minimal, subtle)
-    border: str = "#3C3C3C"  # Subtle border
-    border_subtle: str = "#2D2D2D"  # Even more subtle
-    divider: str = "#2D2D2D"
+    # Border colors
+    border: str = "#374151"  # Visible but not harsh
+    border_subtle: str = "#1f2937"  # Barely visible separation
+    border_focus: str = "#6366f1"  # Accent color for focus
 
     # Status colors
-    error: str = "#F14C4C"  # Red
-    warning: str = "#CCA700"  # Yellow/Orange
-    success: str = "#89D185"  # Green
+    success: str = "#10b981"  # Emerald
+    success_light: str = "#34d399"
+    warning: str = "#f59e0b"  # Amber
+    warning_light: str = "#fbbf24"
+    error: str = "#ef4444"  # Red
+    error_light: str = "#f87171"
 
-    # Token budget colors (gradient)
-    budget_green: str = "#89D185"
-    budget_yellow: str = "#CCA700"
-    budget_orange: str = "#CE9178"
-    budget_red: str = "#F14C4C"
+    # Token budget colors (gradient progression)
+    budget_green: str = "#10b981"
+    budget_green_light: str = "#34d399"
+    budget_yellow: str = "#f59e0b"
+    budget_yellow_light: str = "#fbbf24"
+    budget_orange: str = "#fb923c"
+    budget_orange_light: str = "#f97316"
+    budget_red: str = "#ef4444"
+    budget_red_light: str = "#dc2626"
 
-    # Scrollbar (minimal)
-    scrollbar_bg: str = "#1E1E1E"
-    scrollbar_handle: str = "#424242"
-    scrollbar_handle_hover: str = "#555555"
+    # Message bubble colors
+    user_bubble_start: str = "#6366f1"  # Gradient start
+    user_bubble_end: str = "#8b5cf6"  # Gradient end
+    assistant_bubble: str = "#1a1a22"
 
-    # Focus mode indicator
-    focus_border: str = "#007ACC"
+    # Scrollbar (minimal, premium)
+    scrollbar_bg: str = "transparent"
+    scrollbar_handle: str = "#374151"
+    scrollbar_handle_hover: str = "#4b5563"
+
+    # Selection
+    selection: str = "rgba(99, 102, 241, 0.3)"
+
+    # Code block (GitHub dark inspired)
+    code_bg: str = "#0d1117"
+    code_border: str = "#30363d"
 
 
 @dataclass
 class ThemeFonts:
-    """Font families for different UI contexts."""
+    """Premium font families."""
 
-    # UI elements (labels, buttons, menus)
-    ui: str = "'Inter', 'Roboto', 'Segoe UI', sans-serif"
+    # UI elements - Inter is the premium standard
+    ui: str = "'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif"
 
-    # Chat messages (Windows native feel)
-    chat: str = "'Segoe UI', 'SF Pro Text', sans-serif"
+    # Chat messages
+    chat: str = "'Inter', 'SF Pro Text', 'Segoe UI', sans-serif"
 
-    # Code and XML display
+    # Code and monospace
     mono: str = "'JetBrains Mono', 'Fira Code', 'Consolas', monospace"
 
 
 @dataclass
 class ThemeMetrics:
-    """Spacing and sizing constants."""
+    """Spacing and sizing - premium proportions."""
 
-    # Border radius
-    radius_small: int = 4
-    radius_medium: int = 6
-    radius_large: int = 8
+    # Border radius (slightly larger for premium feel)
+    radius_small: int = 6
+    radius_medium: int = 8
+    radius_large: int = 12
+    radius_xl: int = 16
 
     # Padding
     padding_small: int = 8
@@ -97,6 +112,18 @@ class ThemeMetrics:
     font_medium: int = 14
     font_large: int = 16
 
+    # Shadows
+    shadow_sm: str = "0 2px 8px rgba(0, 0, 0, 0.3)"
+    shadow_md: str = "0 4px 12px rgba(0, 0, 0, 0.4)"
+    shadow_lg: str = "0 8px 24px rgba(0, 0, 0, 0.5)"
+    shadow_accent: str = "0 4px 16px rgba(99, 102, 241, 0.4)"
+    shadow_user_bubble: str = "0 4px 12px rgba(99, 102, 241, 0.15)"
+
+    # Transitions
+    transition_fast: str = "150ms cubic-bezier(0.4, 0, 0.2, 1)"
+    transition_normal: str = "200ms cubic-bezier(0.4, 0, 0.2, 1)"
+    transition_slow: str = "300ms cubic-bezier(0.4, 0, 0.2, 1)"
+
 
 # Global instances
 theme = ThemeColors()
@@ -105,13 +132,13 @@ metrics = ThemeMetrics()
 
 
 def get_stylesheet() -> str:
-    """Generate the complete application stylesheet.
+    """Generate the complete premium application stylesheet.
 
     Returns:
         CSS stylesheet string for Qt
     """
     return f"""
-        /* === GLOBAL === */
+        /* === GLOBAL - Premium Dark === */
         QMainWindow {{
             background-color: {theme.background};
         }}
@@ -123,9 +150,9 @@ def get_stylesheet() -> str:
             font-size: {metrics.font_normal}px;
         }}
 
-        /* === SCROLL AREAS === */
+        /* === SCROLL AREAS - Minimal Premium === */
         QScrollArea {{
-            background-color: {theme.background};
+            background-color: transparent;
             border: none;
         }}
 
@@ -157,36 +184,38 @@ def get_stylesheet() -> str:
             background: none;
         }}
 
-        /* === TEXT INPUTS === */
+        /* === TEXT INPUTS - Premium Elevated === */
         QTextEdit {{
-            background-color: {theme.background_secondary};
+            background-color: {theme.background_elevated};
             color: {theme.text_primary};
-            border: 1px solid {theme.border_subtle};
-            border-radius: {metrics.radius_medium}px;
-            padding: {metrics.padding_medium}px;
-            selection-background-color: {theme.accent};
+            border: 1px solid {theme.border};
+            border-radius: {metrics.radius_large}px;
+            padding: {metrics.padding_medium}px {metrics.padding_large}px;
+            selection-background-color: {theme.selection};
             font-family: {fonts.chat};
             font-size: {metrics.font_medium}px;
         }}
 
         QTextEdit:focus {{
-            border-color: {theme.accent};
+            border: 2px solid {theme.border_focus};
         }}
 
         QTextEdit:disabled {{
             background-color: {theme.background_tertiary};
-            color: {theme.text_muted};
+            color: {theme.text_disabled};
+            border-color: {theme.border_subtle};
         }}
 
-        /* === BUTTONS === */
+        /* === BUTTONS - Premium with Depth === */
         QPushButton {{
             background-color: {theme.accent};
             color: white;
             border: none;
             border-radius: {metrics.radius_medium}px;
-            padding: {metrics.padding_small}px {metrics.padding_medium}px;
+            padding: {metrics.padding_small}px {metrics.padding_large}px;
             font-weight: 500;
             font-family: {fonts.ui};
+            font-size: {metrics.font_normal}px;
         }}
 
         QPushButton:hover {{
@@ -199,7 +228,7 @@ def get_stylesheet() -> str:
 
         QPushButton:disabled {{
             background-color: {theme.border};
-            color: {theme.text_muted};
+            color: {theme.text_disabled};
         }}
 
         /* === LABELS === */
@@ -209,128 +238,139 @@ def get_stylesheet() -> str:
             font-family: {fonts.ui};
         }}
 
-        /* === STATUS BAR === */
+        /* === STATUS BAR - Subtle Premium === */
         QStatusBar {{
             background-color: {theme.background_tertiary};
-            color: {theme.text_secondary};
+            color: {theme.text_muted};
             border-top: 1px solid {theme.border_subtle};
             font-size: {metrics.font_small}px;
         }}
 
-        /* === COMBO BOX === */
+        /* === COMBO BOX - Premium Dropdown === */
         QComboBox {{
-            background-color: {theme.background_secondary};
+            background-color: {theme.background_elevated};
             color: {theme.text_primary};
-            border: 1px solid {theme.border_subtle};
+            border: 1px solid {theme.border};
             border-radius: {metrics.radius_medium}px;
-            padding: {metrics.padding_small}px {metrics.padding_medium}px;
-            min-height: 20px;
+            padding: {metrics.padding_medium}px;
+            min-height: 24px;
             font-family: {fonts.ui};
+            font-size: {metrics.font_normal}px;
         }}
 
         QComboBox:hover {{
-            border-color: {theme.border};
+            border-color: {theme.accent};
         }}
 
         QComboBox:focus {{
-            border-color: {theme.accent};
+            border: 2px solid {theme.border_focus};
         }}
 
         QComboBox::drop-down {{
             border: none;
-            width: 20px;
+            width: 24px;
         }}
 
         QComboBox::down-arrow {{
             image: none;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-top: 5px solid {theme.text_secondary};
-            margin-right: 8px;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 6px solid {theme.text_muted};
+            margin-right: {metrics.padding_small}px;
         }}
 
         QComboBox QAbstractItemView {{
-            background-color: {theme.background_secondary};
+            background-color: {theme.background_elevated};
             color: {theme.text_primary};
             border: 1px solid {theme.border};
-            selection-background-color: {theme.accent_subtle};
+            border-radius: {metrics.radius_medium}px;
+            selection-background-color: {theme.accent};
             outline: none;
+            padding: {metrics.padding_small}px;
         }}
 
-        /* === LIST WIDGET === */
+        /* === LIST WIDGET - Premium List === */
         QListWidget {{
-            background-color: {theme.background_secondary};
+            background-color: {theme.background};
             color: {theme.text_primary};
-            border: 1px solid {theme.border_subtle};
-            border-radius: {metrics.radius_small}px;
+            border: 1px solid {theme.border};
+            border-radius: {metrics.radius_medium}px;
             font-size: {metrics.font_small}px;
             outline: none;
         }}
 
         QListWidget::item {{
-            padding: {metrics.padding_small}px;
+            padding: {metrics.padding_small}px {metrics.padding_medium}px;
             border-radius: {metrics.radius_small}px;
+            border-left: 3px solid transparent;
         }}
 
         QListWidget::item:selected {{
             background-color: {theme.accent_subtle};
+            border-left: 3px solid {theme.accent};
         }}
 
         QListWidget::item:hover {{
-            background-color: {theme.border_subtle};
+            background-color: {theme.background_elevated};
         }}
 
-        /* === PROGRESS BAR === */
+        /* === PROGRESS BAR - Premium Gradient === */
         QProgressBar {{
-            background-color: {theme.background_tertiary};
-            border: none;
-            border-radius: {metrics.radius_small}px;
+            background-color: {theme.background_elevated};
+            border: 1px solid {theme.border};
+            border-radius: {metrics.radius_medium}px;
             height: 6px;
             text-align: center;
         }}
 
         QProgressBar::chunk {{
-            background-color: {theme.budget_green};
-            border-radius: {metrics.radius_small}px;
+            background-color: {theme.success};
+            border-radius: 5px;
         }}
 
-        /* === DIALOGS === */
+        /* === DIALOGS - Elevated Premium === */
         QDialog {{
-            background-color: {theme.background};
+            background-color: {theme.background_secondary};
             border: 1px solid {theme.border};
             border-radius: {metrics.radius_large}px;
         }}
 
-        /* === MENU === */
+        /* === MENU - Premium Dropdown === */
         QMenu {{
-            background-color: {theme.background_secondary};
+            background-color: {theme.background_elevated};
             color: {theme.text_primary};
             border: 1px solid {theme.border};
-            border-radius: {metrics.radius_small}px;
-            padding: 4px;
+            border-radius: {metrics.radius_medium}px;
+            padding: {metrics.padding_small}px;
         }}
 
         QMenu::item {{
-            padding: 6px 24px 6px 12px;
+            padding: {metrics.padding_small}px {metrics.padding_large}px;
             border-radius: {metrics.radius_small}px;
         }}
 
         QMenu::item:selected {{
-            background-color: {theme.accent_subtle};
+            background-color: {theme.accent};
         }}
 
-        /* === CHECK BOX === */
+        QMenu::separator {{
+            height: 1px;
+            background-color: {theme.border_subtle};
+            margin: {metrics.padding_small}px {metrics.padding_medium}px;
+        }}
+
+        /* === CHECK BOX - Premium Toggle === */
         QCheckBox {{
             color: {theme.text_primary};
-            spacing: 8px;
+            spacing: {metrics.padding_small}px;
         }}
 
         QCheckBox::indicator {{
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             border-radius: {metrics.radius_small}px;
-            border: 1px solid {theme.border};
-            background-color: {theme.background_secondary};
+            border: 2px solid {theme.border};
+            background-color: {theme.background_elevated};
         }}
 
         QCheckBox::indicator:checked {{
@@ -340,5 +380,23 @@ def get_stylesheet() -> str:
 
         QCheckBox::indicator:hover {{
             border-color: {theme.accent};
+        }}
+
+        /* === TEXT BROWSER === */
+        QTextBrowser {{
+            background-color: transparent;
+            border: none;
+            color: {theme.text_primary};
+            selection-background-color: {theme.selection};
+        }}
+
+        /* === TOOL TIP === */
+        QToolTip {{
+            background-color: {theme.background_elevated};
+            color: {theme.text_primary};
+            border: 1px solid {theme.border};
+            border-radius: {metrics.radius_small}px;
+            padding: {metrics.padding_small}px {metrics.padding_medium}px;
+            font-size: {metrics.font_small}px;
         }}
     """

@@ -1,4 +1,4 @@
-"""Input panel for user message entry."""
+"""Premium input panel for user message entry."""
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -7,15 +7,16 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QPushButton,
     QSizePolicy,
+    QGraphicsDropShadowEffect,
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QColor
 
 from ..config.themes import theme, fonts, metrics
 
 
 class MessageInput(QTextEdit):
-    """Custom text edit that handles Ctrl+Enter for sending."""
+    """Premium text input with focus states and smooth styling."""
 
     submit_requested = Signal()
 
@@ -28,29 +29,29 @@ class MessageInput(QTextEdit):
         super().__init__(parent)
         self.setPlaceholderText("Type your message... (Ctrl+Enter to send)")
         self.setAcceptRichText(False)
-        self.setMinimumHeight(60)
+        self.setMinimumHeight(56)
         self.setMaximumHeight(150)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        # Apply styling - input field should be the brightest, most prominent
+        # Premium styling with focus states
         self.setStyleSheet(f"""
             QTextEdit {{
-                background-color: {theme.background_secondary};
+                background-color: {theme.background_elevated};
                 color: {theme.text_primary};
                 border: 1px solid {theme.border};
-                border-radius: {metrics.radius_medium}px;
-                padding: {metrics.padding_medium}px;
+                border-radius: {metrics.radius_large}px;
+                padding: {metrics.padding_medium}px {metrics.padding_large}px;
                 font-family: {fonts.chat};
                 font-size: {metrics.font_medium}px;
-                selection-background-color: {theme.accent};
+                selection-background-color: {theme.selection};
             }}
             QTextEdit:focus {{
-                border-color: {theme.accent};
-                background-color: #2A2A2A;
+                border: 2px solid {theme.border_focus};
+                background-color: #1f1f28;
             }}
             QTextEdit:disabled {{
                 background-color: {theme.background_tertiary};
-                color: {theme.text_muted};
+                color: {theme.text_disabled};
                 border-color: {theme.border_subtle};
             }}
         """)
@@ -70,7 +71,7 @@ class MessageInput(QTextEdit):
 
 
 class InputPanel(QWidget):
-    """Panel containing the message input and send button."""
+    """Premium panel containing the message input and send button."""
 
     message_submitted = Signal(str)
 
@@ -84,7 +85,7 @@ class InputPanel(QWidget):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Set up the panel UI."""
+        """Set up the premium panel UI."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(
             metrics.padding_xlarge,
@@ -99,12 +100,14 @@ class InputPanel(QWidget):
         self.input_field.submit_requested.connect(self._on_submit)
         layout.addWidget(self.input_field)
 
-        # Send button - prominent accent color
+        # Premium send button with hover effects
         self.send_button = QPushButton("Send")
-        self.send_button.setMinimumWidth(80)
-        self.send_button.setMinimumHeight(44)
+        self.send_button.setMinimumWidth(88)
+        self.send_button.setMinimumHeight(48)
         self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_button.clicked.connect(self._on_submit)
+
+        # Premium button styling with gradient-like effect
         self.send_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {theme.accent};
@@ -114,7 +117,7 @@ class InputPanel(QWidget):
                 font-weight: 600;
                 font-size: {metrics.font_medium}px;
                 font-family: {fonts.ui};
-                padding: 0 {metrics.padding_large}px;
+                padding: 0 {metrics.padding_xlarge}px;
             }}
             QPushButton:hover {{
                 background-color: {theme.accent_hover};
@@ -124,15 +127,16 @@ class InputPanel(QWidget):
             }}
             QPushButton:disabled {{
                 background-color: {theme.border};
-                color: {theme.text_muted};
+                color: {theme.text_disabled};
             }}
         """)
         layout.addWidget(self.send_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
-        # Panel styling
+        # Premium panel styling - elevated from background
         self.setStyleSheet(f"""
             InputPanel {{
-                background-color: {theme.background};
+                background-color: {theme.background_secondary};
+                border-top: 1px solid {theme.border_subtle};
             }}
         """)
 

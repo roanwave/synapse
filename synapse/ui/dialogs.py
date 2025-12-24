@@ -73,11 +73,11 @@ class ExitDialog(QDialog):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        # Main container with styling
+        # Main container with premium styling
         container = QFrame(self)
         container.setStyleSheet(f"""
             QFrame {{
-                background-color: {theme.background};
+                background-color: {theme.background_secondary};
                 border: 1px solid {theme.border};
                 border-radius: {metrics.radius_large}px;
             }}
@@ -298,7 +298,7 @@ class HelpDialog(QDialog):
         container = QFrame(self)
         container.setStyleSheet(f"""
             QFrame {{
-                background-color: {theme.background};
+                background-color: {theme.background_secondary};
                 border: 1px solid {theme.border};
                 border-radius: {metrics.radius_large}px;
             }}
@@ -428,7 +428,7 @@ class AboutDialog(QDialog):
         container = QFrame(self)
         container.setStyleSheet(f"""
             QFrame {{
-                background-color: {theme.background};
+                background-color: {theme.background_secondary};
                 border: 1px solid {theme.border};
                 border-radius: {metrics.radius_large}px;
             }}
@@ -543,16 +543,17 @@ class NotificationToast(QLabel):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Set up the toast UI."""
+        """Set up the premium toast UI."""
         self.setStyleSheet(f"""
             QLabel {{
-                background-color: {theme.background_secondary};
+                background-color: {theme.background_elevated};
                 color: {theme.text_primary};
-                font-size: {metrics.font_small}px;
+                font-size: {metrics.font_normal}px;
                 font-family: {fonts.ui};
-                padding: 8px 16px;
-                border-radius: {metrics.radius_medium}px;
-                border: 1px solid {theme.border_subtle};
+                font-weight: 500;
+                padding: 10px 20px;
+                border-radius: {metrics.radius_large}px;
+                border: 1px solid {theme.border};
             }}
         """)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -617,7 +618,7 @@ class SessionBrowserDialog(QDialog):
         container = QFrame(self)
         container.setStyleSheet(f"""
             QFrame {{
-                background-color: {theme.background};
+                background-color: {theme.background_secondary};
                 border: 1px solid {theme.border};
                 border-radius: {metrics.radius_large}px;
             }}
