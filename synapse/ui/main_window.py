@@ -520,9 +520,7 @@ class MainWindow(QMainWindow):
         Args:
             message: The user's message
         """
-        print(f"DEBUG -1: _on_message_submitted called with: {message[:30] if message else 'empty'}...", flush=True)
         if self._is_streaming or not self._adapter:
-            print(f"DEBUG -1a: Early return - streaming={self._is_streaming}, adapter={self._adapter is not None}", flush=True)
             return
 
         # Update intent based on message
@@ -537,21 +535,16 @@ class MainWindow(QMainWindow):
 
         # Check for YouTube URLs - fetch async if found
         self._prompt_builder.clear_youtube_context()
-        print(f"DEBUG 0: Checking for YouTube URL in: {message[:50]}...", flush=True)
         if contains_youtube_url(message):
             video_id = extract_video_id(message)
-            print(f"DEBUG 0a: Found YouTube video_id={video_id}", flush=True)
             if video_id:
                 # Fetch transcript asynchronously to avoid blocking UI
                 self.status_bar.showMessage("Fetching YouTube transcript...", 0)
                 self.input_panel.set_enabled(False)
-                print("DEBUG 0b: About to schedule async YouTube fetch", flush=True)
-                task = asyncio.ensure_future(self._fetch_youtube_and_send(video_id, message))
-                print(f"DEBUG 0c: Task scheduled: {task}", flush=True)
+                asyncio.ensure_future(self._fetch_youtube_and_send(video_id, message))
                 return
 
         # No YouTube URL - proceed normally
-        print("DEBUG 0d: No YouTube URL, calling _continue_message_submission", flush=True)
         self._continue_message_submission(message)
 
     async def _fetch_youtube_and_send(self, video_id: str, message: str) -> None:
@@ -561,7 +554,6 @@ class MainWindow(QMainWindow):
             video_id: YouTube video ID
             message: The user's message
         """
-        print("DEBUG 1: Starting YouTube fetch", flush=True)
         try:
             # Run fetch in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -570,7 +562,6 @@ class MainWindow(QMainWindow):
                 fetch_transcript,
                 video_id
             )
-            print(f"DEBUG 2: YouTube fetch complete, transcript={transcript is not None}, error={error}")
 
             if transcript:
                 # Add transcript to context
@@ -585,11 +576,9 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage(f"YouTube: {error}", 5000)
 
         except Exception as e:
-            print(f"DEBUG 2-ERR: YouTube fetch exception: {e}")
             self.status_bar.showMessage(f"YouTube fetch error: {str(e)}", 5000)
 
         # Check if message is just the URL - if so, add default instruction
-        # Remove all YouTube URL patterns to see if there's any other text
         import re
         url_patterns = [
             r'https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+(?:&\S*)?',
@@ -604,16 +593,12 @@ class MainWindow(QMainWindow):
         if not text_without_urls:
             # User only pasted the link - add default instruction
             user_message = "Please provide a comprehensive summary of this YouTube video transcript."
-            print("DEBUG 3a: Using default instruction (user only pasted link)", flush=True)
         else:
             # User included instructions with the link
             user_message = message
-            print("DEBUG 3b: Using user's original message", flush=True)
 
-        # Continue with message submission - await the full async flow
-        print("DEBUG 3: Calling _continue_message_submission_async")
+        # Continue with message submission
         await self._continue_message_submission_async(user_message)
-        print("DEBUG 4: _continue_message_submission_async returned")
 
     def _continue_message_submission(self, message: str) -> None:
         """Continue message submission (sync entry point).
@@ -630,7 +615,6 @@ class MainWindow(QMainWindow):
         Args:
             message: The user's message
         """
-        print("DEBUG 5: Inside _continue_message_submission_async")
         # Add user message to UI and history
         self.chat_panel.add_user_message(message)
         self._prompt_builder.add_user_message(message)
@@ -651,10 +635,8 @@ class MainWindow(QMainWindow):
         self.sidebar.set_regenerate_enabled(False)
         self.chat_panel.start_assistant_message()
 
-        print("DEBUG 6: About to call _stream_response_with_rag")
         # Await the streaming response with RAG
         await self._stream_response_with_rag(message)
-        print("DEBUG 7: _stream_response_with_rag returned")
 
     async def _stream_response_with_rag(self, user_message: str) -> None:
         """Stream a response with RAG retrieval.
@@ -662,12 +644,10 @@ class MainWindow(QMainWindow):
         Args:
             user_message: The user's message for RAG query
         """
-        print("DEBUG 8: Inside _stream_response_with_rag")
         # Perform RAG retrieval if documents are indexed
         if self._rag_initialized and self._vector_store:
             doc_count = len(self._vector_store.get_all_doc_ids())
             if doc_count > 0:
-                print("DEBUG 8a: Performing RAG retrieval")
                 chunks = await self._perform_rag_retrieval(user_message)
                 self._prompt_builder.set_rag_context(chunks, user_message)
             else:
@@ -678,46 +658,26 @@ class MainWindow(QMainWindow):
         # Update inspector
         self._update_inspector()
 
-        print("DEBUG 9: About to call _stream_response")
         # Stream the response
         await self._stream_response()
-        print("DEBUG 10: _stream_response returned")
 
     async def _stream_response(self) -> None:
         """Stream a response from the LLM."""
-        print("DEBUG 11: Inside _stream_response")
         if not self._adapter:
-            print("DEBUG 11-ERR: No adapter!")
             return
 
         full_response = ""
 
         try:
-            print("DEBUG 12: Building messages and system prompt")
             messages = self._prompt_builder.build_messages()
             system = self._prompt_builder.get_system_prompt()
-            print(f"DEBUG 13: Messages count={len(messages)}, system len={len(system)}")
-            if "<youtube_transcript>" in system:
-                print("DEBUG 13a: YouTube transcript IS in system prompt")
-            else:
-                print("DEBUG 13b: YouTube transcript NOT in system prompt")
-            if self._prompt_builder._youtube_context:
-                print(f"DEBUG 13c: _youtube_context len={len(self._prompt_builder._youtube_context)}")
-            else:
-                print("DEBUG 13d: _youtube_context is None/empty")
 
-            print("DEBUG 14: Starting LLM stream")
-            chunk_count = 0
             async for chunk in self._adapter.stream(messages, system):
-                chunk_count += 1
-                if chunk_count == 1:
-                    print("DEBUG 15: Got first chunk from LLM")
                 if chunk.text:
                     full_response += chunk.text
                     self.chat_panel.append_to_assistant_message(chunk.text)
 
                 if chunk.is_final and chunk.usage:
-                    print(f"DEBUG 16: Final chunk, usage={chunk.usage}")
                     # Update status with actual usage
                     self.status_bar.showMessage(
                         f"Input: {chunk.usage['input_tokens']} | "
@@ -725,19 +685,16 @@ class MainWindow(QMainWindow):
                         5000
                     )
 
-            print(f"DEBUG 17: LLM stream complete, total chunks={chunk_count}")
             # Add complete response to history
             self._prompt_builder.add_assistant_message(full_response)
             self.chat_panel.finish_assistant_message()
 
         except Exception as e:
-            print(f"DEBUG 17-ERR: Exception in stream: {e}")
             error_msg = str(e)
             self.chat_panel.add_error_message(error_msg)
             self.status_bar.showMessage(f"Error: {error_msg}", 5000)
 
         finally:
-            print("DEBUG 18: Cleanup in finally block")
             self._is_streaming = False
             self.input_panel.set_enabled(True)
             self.sidebar.set_regenerate_enabled(
