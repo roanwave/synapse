@@ -17,6 +17,7 @@ class ThemeColors:
     background: str = "#0a0a0f"  # App background - almost black, slight blue tint
     background_secondary: str = "#121218"  # Chat panel - elevated layer
     background_tertiary: str = "#0d0d12"  # Sidebar - recessed slightly
+    background_sidebar: str = "#0d0d12"  # Sidebar and side panels (alias)
     background_elevated: str = "#1a1a22"  # Modals, dropdowns, cards
 
     # Text hierarchy
