@@ -209,7 +209,23 @@ class ConversationStore:
             waypoints=data.get("waypoints", []),
             artifacts_generated=data.get("artifacts_generated", []),
             messages=data.get("messages", []),
+            fork_source_session_id=data.get("fork_source_session_id"),
+            fork_point_index=data.get("fork_point_index"),
         )
+
+    def get_forks_of_session(self, session_id: str) -> List[SessionRecord]:
+        """Get all sessions that were forked from a given session.
+
+        Args:
+            session_id: The source session ID
+
+        Returns:
+            List of forked sessions
+        """
+        return [
+            s for s in self._iter_sessions()
+            if s.fork_source_session_id == session_id
+        ]
 
     def _rewrite_sessions(self, sessions: List[SessionRecord]) -> None:
         """Rewrite the archive file with given sessions.

@@ -153,6 +153,7 @@ class MainWindow(QMainWindow):
 
         # Chat panel
         self.chat_panel = ChatPanel()
+        self.chat_panel.fork_requested.connect(self._on_fork_requested)
         chat_layout.addWidget(self.chat_panel, stretch=1)
 
         # Premium divider
@@ -1002,6 +1003,107 @@ class MainWindow(QMainWindow):
         """
         self.chat_panel.scroll_to_message(message_index)
         self.sidebar.set_toc_current_index(message_index)
+
+    def _on_fork_requested(self, message_index: int) -> None:
+        """Handle fork request from a message.
+
+        Creates a new session with messages up to the fork point.
+
+        Args:
+            message_index: Index of the message to fork from
+        """
+        if self._is_streaming:
+            return
+
+        # Get messages up to and including the fork point
+        all_messages = self._prompt_builder.history.messages
+        if message_index >= len(all_messages):
+            self.status_bar.showMessage("Cannot fork from this message", 3000)
+            return
+
+        # Messages to include in fork (up to and including fork point)
+        fork_messages = [
+            {"role": msg.role, "content": msg.content}
+            for msg in all_messages[: message_index + 1]
+        ]
+
+        if not fork_messages:
+            self.status_bar.showMessage("No messages to fork", 3000)
+            return
+
+        # Save current session first
+        current_session_id = self._session_record.session_id
+        self._save_session_data()
+
+        # Create forked session
+        forked_session = SessionRecord.create_fork(
+            source_session_id=current_session_id,
+            fork_point_index=message_index,
+            messages=fork_messages,
+            models_used=[self._current_model_id] if self._current_model_id else [],
+        )
+
+        # Load the forked session
+        self._load_forked_session(forked_session)
+
+        self.status_bar.showMessage(
+            f"Forked conversation at message {message_index + 1}", 3000
+        )
+
+    def _load_forked_session(self, session: SessionRecord) -> None:
+        """Load a forked session as the active conversation.
+
+        Args:
+            session: The forked SessionRecord to load
+        """
+        # Clear current state
+        self.chat_panel.clear()
+        self.sidebar.clear_toc()
+        self._prompt_builder = PromptBuilder()
+        self._intent_tracker = IntentTracker()
+        self._waypoint_manager = WaypointManager()
+        self._toc_generator = TOCGenerator()
+        self._drift_detector = DriftDetector()
+
+        # Set the forked session as current
+        self._session_record = session
+
+        # Show fork header
+        fork_msg = f"Forked from message {session.fork_point_index + 1}"
+        self.chat_panel.add_system_message(f"🔀 {fork_msg}")
+
+        # Load messages
+        for msg in session.messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            if role == "user":
+                msg_index = self.chat_panel.add_user_message(content)
+                self._prompt_builder.add_user_message(content)
+                # Analyze for TOC entry
+                toc_entry = self._toc_generator.analyze_message(content, "user", msg_index)
+                if toc_entry:
+                    self.sidebar.add_toc_entry(toc_entry)
+            elif role == "assistant":
+                msg_index = self.chat_panel.start_assistant_message()
+                self.chat_panel.append_to_assistant_message(content)
+                self.chat_panel.finish_assistant_message()
+                self._prompt_builder.add_assistant_message(content)
+                # Analyze for TOC entry
+                toc_entry = self._toc_generator.analyze_message(content, "assistant", msg_index)
+                if toc_entry:
+                    self.sidebar.add_toc_entry(toc_entry)
+
+        # Update context display
+        self._update_token_count()
+
+        # Enable regenerate if we have messages
+        self.sidebar.set_regenerate_enabled(
+            self._prompt_builder.get_message_count() > 0
+        )
+
+        # Focus input for continuation
+        self.input_panel.focus_input()
 
     async def _perform_rag_retrieval(self, query: str) -> List[Dict[str, Any]]:
         """Perform hybrid RAG retrieval for a query.

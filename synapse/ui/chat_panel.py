@@ -120,6 +120,43 @@ class CopyButton(QPushButton):
         self._apply_normal_style()
 
 
+class ForkButton(QPushButton):
+    """Fork button that appears on hover to create conversation branches."""
+
+    def __init__(self, parent: QWidget | None = None):
+        """Initialize the fork button.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """Set up the button UI."""
+        self.setText("Fork")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(24)
+        self.setToolTip("Create a new conversation branch from this point")
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {theme.text_muted};
+                border: none;
+                font-size: 11px;
+                font-family: {fonts.ui};
+                font-weight: 500;
+                padding: 4px 8px;
+                opacity: 0.5;
+            }}
+            QPushButton:hover {{
+                color: {theme.accent};
+                background-color: {theme.background_elevated};
+                border-radius: 4px;
+            }}
+        """)
+
+
 class TypingIndicator(QWidget):
     """Premium animated typing indicator (three pulsing dots with wave effect)."""
 
@@ -206,6 +243,9 @@ class TypingIndicator(QWidget):
 class MessageBubble(QFrame):
     """Premium message bubble with gradient backgrounds and shadows."""
 
+    # Signal emitted when fork button is clicked
+    fork_requested = Signal()
+
     def __init__(
         self,
         role: str,
@@ -227,6 +267,7 @@ class MessageBubble(QFrame):
         self._timestamp = timestamp or datetime.now()
         self._typing_indicator: TypingIndicator | None = None
         self._copy_button: CopyButton | None = None
+        self._fork_button: ForkButton | None = None
         self._setup_ui(content)
 
     def _setup_ui(self, content: str) -> None:
@@ -269,6 +310,11 @@ class MessageBubble(QFrame):
         header_row.addWidget(self._timestamp_label)
 
         header_row.addStretch()
+
+        # Fork button
+        self._fork_button = ForkButton()
+        self._fork_button.clicked.connect(self._on_fork_clicked)
+        header_row.addWidget(self._fork_button)
 
         # Copy button
         self._copy_button = CopyButton()
@@ -382,6 +428,10 @@ class MessageBubble(QFrame):
         if self._copy_button:
             self._copy_button.show_copied_feedback()
 
+    def _on_fork_clicked(self) -> None:
+        """Handle fork button click."""
+        self.fork_requested.emit()
+
     def _render_content(self, content: str) -> None:
         """Render markdown content as HTML.
 
@@ -485,6 +535,8 @@ class ChatPanel(QWidget):
 
     # Signal emitted when current visible message changes (for TOC)
     visible_message_changed = Signal(int)  # message_index
+    # Signal emitted when fork is requested from a message
+    fork_requested = Signal(int)  # message_index
 
     def __init__(self, parent: QWidget | None = None):
         """Initialize the chat panel.
@@ -597,6 +649,12 @@ class ChatPanel(QWidget):
         message_index = self._next_message_index
         self._message_indices[bubble] = message_index
         self._next_message_index += 1
+
+        # Connect fork signal
+        bubble.fork_requested.connect(
+            lambda idx=message_index: self.fork_requested.emit(idx)
+        )
+
         self._add_bubble(bubble, align_right=True)
         return message_index
 
@@ -620,6 +678,12 @@ class ChatPanel(QWidget):
         message_index = self._next_message_index
         self._message_indices[bubble] = message_index
         self._next_message_index += 1
+
+        # Connect fork signal
+        bubble.fork_requested.connect(
+            lambda idx=message_index: self.fork_requested.emit(idx)
+        )
+
         self._add_bubble(bubble)
         return message_index
 

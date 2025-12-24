@@ -167,6 +167,9 @@ class SessionRecord:
     waypoints: List[Dict[str, Any]] = field(default_factory=list)
     artifacts_generated: List[str] = field(default_factory=list)
     messages: List[Dict[str, str]] = field(default_factory=list)
+    # Fork tracking
+    fork_source_session_id: Optional[str] = None
+    fork_point_index: Optional[int] = None
 
     @classmethod
     def create(cls) -> "SessionRecord":
@@ -180,9 +183,42 @@ class SessionRecord:
             started_at=datetime.now(),
         )
 
+    @classmethod
+    def create_fork(
+        cls,
+        source_session_id: str,
+        fork_point_index: int,
+        messages: List[Dict[str, str]],
+        models_used: Optional[List[str]] = None,
+    ) -> "SessionRecord":
+        """Create a new session record as a fork of another session.
+
+        Args:
+            source_session_id: ID of the session being forked
+            fork_point_index: Message index where fork occurs
+            messages: Messages up to the fork point
+            models_used: Models used in the source session
+
+        Returns:
+            New SessionRecord instance for the fork
+        """
+        return cls(
+            session_id=str(uuid.uuid4()),
+            started_at=datetime.now(),
+            models_used=models_used or [],
+            messages=messages,
+            fork_source_session_id=source_session_id,
+            fork_point_index=fork_point_index,
+        )
+
+    @property
+    def is_fork(self) -> bool:
+        """Check if this session is a fork of another."""
+        return self.fork_source_session_id is not None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        return {
+        data = {
             "session_id": self.session_id,
             "started_at": self.started_at.isoformat(),
             "ended_at": self.ended_at.isoformat() if self.ended_at else None,
@@ -194,6 +230,10 @@ class SessionRecord:
             "artifacts_generated": self.artifacts_generated,
             "messages": self.messages,
         }
+        if self.fork_source_session_id:
+            data["fork_source_session_id"] = self.fork_source_session_id
+            data["fork_point_index"] = self.fork_point_index
+        return data
 
 
 __all__ = [
