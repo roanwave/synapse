@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenuBar,
     QMenu,
+    QFileDialog,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QShortcut, QKeySequence, QAction
@@ -45,6 +46,7 @@ from ..utils.youtube_handler import (
     fetch_transcript,
     estimate_transcript_tokens,
 )
+from ..utils.export import export_to_markdown, generate_export_filename
 from ..storage import SessionRecord
 from ..storage.vector_store_client import FAISSVectorStore
 from ..storage.bm25_client import BM25Client, reciprocal_rank_fusion
@@ -321,6 +323,11 @@ class MainWindow(QMainWindow):
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self._on_save_session)
         file_menu.addAction(save_action)
+
+        export_action = QAction("&Export Chat...", self)
+        export_action.setShortcut("Ctrl+E")
+        export_action.triggered.connect(self._on_export_chat)
+        file_menu.addAction(export_action)
 
         file_menu.addSeparator()
 
@@ -1265,6 +1272,58 @@ class MainWindow(QMainWindow):
 
         self._save_session_data()
         self.status_bar.showMessage("Session saved", 2000)
+
+    def _on_export_chat(self) -> None:
+        """Export the current conversation to a markdown file."""
+        if self._prompt_builder.get_message_count() == 0:
+            self.status_bar.showMessage("No conversation to export", 2000)
+            return
+
+        # Get all messages
+        messages = self._prompt_builder.build_all_messages()
+
+        # Estimate token count
+        token_count = 0
+        if self._token_counter:
+            for msg in messages:
+                token_count += self._token_counter.count(msg.get("content", ""))
+
+        # Get models used
+        models_used = [self._current_model_id] if self._current_model_id else []
+
+        # Generate default filename
+        default_filename = generate_export_filename()
+
+        # Open save dialog
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Chat",
+            default_filename,
+            "Markdown Files (*.md);;All Files (*.*)"
+        )
+
+        if not filepath:
+            return  # User cancelled
+
+        # Ensure .md extension
+        if not filepath.endswith(".md"):
+            filepath += ".md"
+
+        # Export
+        try:
+            markdown_content = export_to_markdown(
+                messages=messages,
+                models_used=models_used,
+                token_count=token_count,
+                session_id=self._session_id,
+            )
+            Path(filepath).write_text(markdown_content, encoding="utf-8")
+
+            # Show confirmation
+            filename = Path(filepath).name
+            self.status_bar.showMessage(f"Chat exported to {filename}", 3000)
+        except Exception as e:
+            self.status_bar.showMessage(f"Export failed: {str(e)}", 5000)
 
     def _on_open_session(self) -> None:
         """Open the session browser dialog."""
