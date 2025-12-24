@@ -32,7 +32,8 @@ def format_timestamp(dt: datetime) -> str:
         - "Dec 23 2024, 2:34 PM" for older
     """
     now = datetime.now()
-    time_str = dt.strftime("%-I:%M %p") if hasattr(dt, 'strftime') else dt.strftime("%I:%M %p").lstrip("0")
+    # Use %I and strip leading zero manually (cross-platform)
+    time_str = dt.strftime("%I:%M %p").lstrip("0")
 
     if dt.date() == now.date():
         return time_str
