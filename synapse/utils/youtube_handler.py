@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 try:
-    from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import (
+    # Import from top-level module (proper API usage)
+    from youtube_transcript_api import (
+        YouTubeTranscriptApi,
         TranscriptsDisabled,
         NoTranscriptFound,
         VideoUnavailable,
@@ -17,6 +18,11 @@ try:
     YOUTUBE_API_AVAILABLE = True
 except ImportError:
     YOUTUBE_API_AVAILABLE = False
+    # Define placeholder classes for type hints when module not installed
+    YouTubeTranscriptApi = None
+    TranscriptsDisabled = Exception
+    NoTranscriptFound = Exception
+    VideoUnavailable = Exception
 
 
 # Regex patterns for YouTube URLs
