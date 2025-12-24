@@ -108,36 +108,12 @@ def fetch_transcript(video_id: str) -> Tuple[Optional[YouTubeTranscript], Option
         return None, "YouTube transcript API not installed. Run: pip install youtube-transcript-api"
 
     try:
-        # Try to get transcript, preferring manual over auto-generated
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-
-        transcript = None
-        is_auto = False
-
-        # Try manual transcripts first (more accurate)
-        try:
-            transcript = transcript_list.find_manually_created_transcript(['en', 'en-US', 'en-GB'])
-            is_auto = False
-        except NoTranscriptFound:
-            # Fall back to auto-generated
-            try:
-                transcript = transcript_list.find_generated_transcript(['en', 'en-US', 'en-GB'])
-                is_auto = True
-            except NoTranscriptFound:
-                # Try any language and translate
-                try:
-                    for t in transcript_list:
-                        transcript = t.translate('en')
-                        is_auto = t.is_generated
-                        break
-                except Exception:
-                    pass
-
-        if transcript is None:
-            return None, "No transcript available for this video (English or translatable)"
-
-        # Fetch the actual transcript data
-        transcript_data = transcript.fetch()
+        # Use get_transcript() - the correct API method
+        # Returns list of dicts: [{'text': '...', 'start': 0.0, 'duration': 2.5}, ...]
+        transcript_data = YouTubeTranscriptApi.get_transcript(
+            video_id,
+            languages=['en', 'en-US', 'en-GB']
+        )
 
         # Build text and calculate duration
         text_parts = []
@@ -155,14 +131,16 @@ def fetch_transcript(video_id: str) -> Tuple[Optional[YouTubeTranscript], Option
             video_id=video_id,
             transcript_text=full_text,
             duration_seconds=int(total_duration),
-            language=transcript.language_code,
-            is_auto_generated=is_auto,
+            language='en',
+            is_auto_generated=False,  # API doesn't expose this with get_transcript
         ), None
 
     except TranscriptsDisabled:
         return None, "Transcripts are disabled for this video"
     except VideoUnavailable:
         return None, "Video is unavailable (private, deleted, or restricted)"
+    except NoTranscriptFound:
+        return None, "No English transcript available for this video"
     except Exception as e:
         return None, f"Failed to fetch transcript: {str(e)}"
 
