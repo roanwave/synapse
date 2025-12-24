@@ -851,11 +851,28 @@ class ChatPanel(QWidget):
         # Find and remove the last assistant bubble
         for bubble in reversed(self._bubbles):
             if bubble.role == "assistant":
-                content = bubble._raw_content
-                bubble.deleteLater()
+                try:
+                    content = bubble._raw_content
+                except RuntimeError:
+                    # Widget already deleted
+                    content = ""
+
+                # Clear current bubble reference if this is it
+                if bubble is self._current_assistant_bubble:
+                    self._current_assistant_bubble = None
+
+                # Remove from tracking
                 self._bubbles.remove(bubble)
                 if bubble in self._message_indices:
                     del self._message_indices[bubble]
+
+                # Safely delete widget
+                try:
+                    bubble.setParent(None)
+                    bubble.deleteLater()
+                except RuntimeError:
+                    pass  # Already deleted
+
                 return content
         return None
 
@@ -870,22 +887,40 @@ class ChatPanel(QWidget):
         user_bubble = None
 
         for bubble in reversed(self._bubbles):
-            if bubble.role == "assistant" and assistant_bubble is None:
+            try:
+                role = bubble.role
+            except RuntimeError:
+                continue  # Skip deleted widgets
+
+            if role == "assistant" and assistant_bubble is None:
                 assistant_bubble = bubble
-            elif bubble.role == "user" and assistant_bubble is not None:
+            elif role == "user" and assistant_bubble is not None:
                 user_bubble = bubble
                 break
 
         if assistant_bubble and user_bubble:
-            # Remove both
-            assistant_bubble.deleteLater()
-            user_bubble.deleteLater()
-            self._bubbles.remove(assistant_bubble)
-            self._bubbles.remove(user_bubble)
+            # Clear current bubble reference if applicable
+            if assistant_bubble is self._current_assistant_bubble:
+                self._current_assistant_bubble = None
+
+            # Remove from tracking lists first
+            if assistant_bubble in self._bubbles:
+                self._bubbles.remove(assistant_bubble)
+            if user_bubble in self._bubbles:
+                self._bubbles.remove(user_bubble)
             if assistant_bubble in self._message_indices:
                 del self._message_indices[assistant_bubble]
             if user_bubble in self._message_indices:
                 del self._message_indices[user_bubble]
+
+            # Safely delete widgets
+            for bubble in [assistant_bubble, user_bubble]:
+                try:
+                    bubble.setParent(None)
+                    bubble.deleteLater()
+                except RuntimeError:
+                    pass  # Already deleted
+
             return True
 
         return False
