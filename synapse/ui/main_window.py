@@ -22,6 +22,7 @@ from .chat_panel import ChatPanel
 from .input_panel import InputPanel
 from .sidebar import Sidebar
 from .inspector import InspectorPanel
+from .side_panel import SidePanel
 from .dialogs import ExitDialog, ExitAction, HelpDialog, AboutDialog, SessionBrowserDialog, NotificationToast, SummaryViewerDialog, ConversationSearchDialog
 from ..config.settings import settings
 from ..config.models import MODELS, get_model, get_available_models
@@ -32,6 +33,7 @@ from ..orchestrator.context_manager import ContextManager, ContextState
 from ..orchestrator.intent_tracker import IntentTracker
 from ..orchestrator.waypoint_manager import WaypointManager
 from ..orchestrator.toc_generator import TOCGenerator
+from ..orchestrator.parallel_context import ParallelContextManager
 from ..summarization.summary_generator import SummaryGenerator
 from ..summarization.drift_detector import DriftDetector
 from ..summarization.artifact_generator import ArtifactGenerator
@@ -87,6 +89,11 @@ class MainWindow(QMainWindow):
 
         # Inspector panel
         self._inspector_panel: Optional[InspectorPanel] = None
+
+        # Side panel for quick questions
+        self._side_panel: Optional[SidePanel] = None
+        self._parallel_context = ParallelContextManager()
+        self._side_streaming = False
 
         # Session tracking
         self._session_record = SessionRecord.create()
@@ -174,6 +181,14 @@ class MainWindow(QMainWindow):
         self._inspector_panel.closed.connect(self._on_inspector_closed)
         self._inspector_panel.hide()
         main_layout.addWidget(self._inspector_panel)
+
+        # Side panel for quick questions (hidden by default)
+        self._side_panel = SidePanel()
+        self._side_panel.closed.connect(self._on_side_panel_closed)
+        self._side_panel.merge_requested.connect(self._on_side_panel_merge)
+        self._side_panel.input_panel.message_submitted.connect(self._on_side_message_submitted)
+        self._side_panel.hide()
+        main_layout.addWidget(self._side_panel)
 
         # Premium status bar
         self.status_bar = QStatusBar()
@@ -264,6 +279,10 @@ class MainWindow(QMainWindow):
         # Ctrl+S - Save session
         save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self._on_save_session)
+
+        # Ctrl+Q - Toggle side panel for quick questions
+        side_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
+        side_shortcut.activated.connect(self._on_toggle_side_panel)
 
     def _setup_menu_bar(self) -> None:
         """Set up the premium main menu bar."""
@@ -388,6 +407,11 @@ class MainWindow(QMainWindow):
         sidebar_action = QAction("Toggle &Sidebar", self)
         sidebar_action.triggered.connect(self._on_toggle_sidebar)
         view_menu.addAction(sidebar_action)
+
+        side_action = QAction("Side &Question Panel", self)
+        side_action.setShortcut("Ctrl+Q")
+        side_action.triggered.connect(self._on_toggle_side_panel)
+        view_menu.addAction(side_action)
 
         view_menu.addSeparator()
 
@@ -1785,3 +1809,99 @@ class MainWindow(QMainWindow):
         session = self._conversation_store.get_session(session_id)
         if session:
             self._load_session_replay(session)
+
+    def _on_toggle_side_panel(self) -> None:
+        """Toggle the side question panel."""
+        if self._side_panel:
+            if self._side_panel.isVisible():
+                # Close and discard
+                self._on_side_panel_closed()
+            else:
+                # Open side panel
+                self._parallel_context.start_side_conversation()
+                self._side_panel.clear()
+                self._side_panel.show()
+                self._side_panel.focus_input()
+                self.status_bar.showMessage("Side panel opened - ask quick questions", 2000)
+
+    def _on_side_panel_closed(self) -> None:
+        """Handle side panel close."""
+        if self._side_panel:
+            self._side_panel.hide()
+            self._parallel_context.end_side_conversation(merge=False)
+            self.input_panel.focus_input()
+
+    def _on_side_panel_merge(self) -> None:
+        """Handle side panel merge request."""
+        if not self._side_panel or not self._parallel_context.get_active_side():
+            return
+
+        # Get merge summary
+        summary = self._parallel_context.end_side_conversation(merge=True)
+
+        if summary:
+            # Add as a system message in main conversation
+            self.chat_panel.add_system_message(summary)
+            self.status_bar.showMessage("Side discussion merged into conversation", 3000)
+
+        # Close side panel
+        self._side_panel.hide()
+        self.input_panel.focus_input()
+
+    def _on_side_message_submitted(self, message: str) -> None:
+        """Handle message submitted in side panel.
+
+        Args:
+            message: The user's message
+        """
+        if not self._adapter or not self._side_panel or self._side_streaming:
+            return
+
+        # Add message to side panel and context
+        self._side_panel.add_user_message(message)
+        self._parallel_context.add_user_message(message)
+
+        # Stream response
+        self._side_streaming = True
+        self._side_panel.set_input_enabled(False)
+        asyncio.ensure_future(self._stream_side_response())
+
+    async def _stream_side_response(self) -> None:
+        """Stream a response for the side panel."""
+        if not self._adapter or not self._side_panel:
+            return
+
+        active_side = self._parallel_context.get_active_side()
+        if not active_side:
+            return
+
+        full_response = ""
+
+        try:
+            # Build messages for side conversation
+            messages = active_side.build_messages()
+
+            # Get summary of main conversation for context
+            main_summary = None
+            if self._prompt_builder.get_message_count() > 0:
+                main_summary = f"Main conversation has {self._prompt_builder.get_message_count()} messages about: {self._intent_tracker.current_mode.value}"
+
+            system = self._parallel_context.get_side_system_prompt(main_summary)
+
+            async for chunk in self._adapter.stream(messages, system):
+                if chunk.text:
+                    full_response += chunk.text
+
+            # Add complete response
+            self._parallel_context.add_assistant_message(full_response)
+            self._side_panel.finish_assistant_message(full_response)
+
+        except Exception as e:
+            error_msg = str(e)
+            self._side_panel.add_assistant_message(f"Error: {error_msg}")
+            self.status_bar.showMessage(f"Side panel error: {error_msg}", 5000)
+
+        finally:
+            self._side_streaming = False
+            self._side_panel.set_input_enabled(True)
+            self._side_panel.focus_input()
