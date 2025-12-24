@@ -14,6 +14,7 @@ Prompt assembly order:
 
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 @dataclass
@@ -24,10 +25,19 @@ class Message:
     content: str
     index: int = 0  # Position in full history
     is_summarized: bool = False  # Whether this message has been summarized
+    timestamp: datetime = field(default_factory=datetime.now)
 
     def to_dict(self) -> Dict[str, str]:
         """Convert to API-compatible dict format."""
         return {"role": self.role, "content": self.content}
+
+    def to_dict_with_timestamp(self) -> Dict[str, Any]:
+        """Convert to dict format including timestamp."""
+        return {
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp.isoformat(),
+        }
 
 
 @dataclass

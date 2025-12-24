@@ -1,5 +1,8 @@
 """Chat panel for displaying conversation history - Premium styling."""
 
+from datetime import datetime
+from typing import Optional
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -18,6 +21,25 @@ from PySide6.QtGui import QFont, QDesktopServices
 
 from ..config.themes import theme, fonts, metrics
 from ..utils.markdown_renderer import render_markdown, strip_markdown
+
+
+def format_timestamp(dt: datetime) -> str:
+    """Format a datetime for display.
+
+    Returns:
+        - "2:34 PM" for today
+        - "Dec 23, 2:34 PM" for this year
+        - "Dec 23 2024, 2:34 PM" for older
+    """
+    now = datetime.now()
+    time_str = dt.strftime("%-I:%M %p") if hasattr(dt, 'strftime') else dt.strftime("%I:%M %p").lstrip("0")
+
+    if dt.date() == now.date():
+        return time_str
+    elif dt.year == now.year:
+        return dt.strftime("%b %d, ") + time_str
+    else:
+        return dt.strftime("%b %d %Y, ") + time_str
 
 
 class CopyButton(QPushButton):
@@ -183,17 +205,25 @@ class TypingIndicator(QWidget):
 class MessageBubble(QFrame):
     """Premium message bubble with gradient backgrounds and shadows."""
 
-    def __init__(self, role: str, content: str = "", parent: QWidget | None = None):
+    def __init__(
+        self,
+        role: str,
+        content: str = "",
+        timestamp: Optional[datetime] = None,
+        parent: QWidget | None = None
+    ):
         """Initialize the message bubble.
 
         Args:
             role: "user" or "assistant"
             content: Initial message content
+            timestamp: Message timestamp (defaults to now)
             parent: Parent widget
         """
         super().__init__(parent)
         self.role = role
         self._raw_content = content
+        self._timestamp = timestamp or datetime.now()
         self._typing_indicator: TypingIndicator | None = None
         self._copy_button: CopyButton | None = None
         self._setup_ui(content)
@@ -204,7 +234,7 @@ class MessageBubble(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        # Header row with role label and copy button
+        # Header row with role label, timestamp, and copy button
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(8)
@@ -223,6 +253,19 @@ class MessageBubble(QFrame):
             }}
         """)
         header_row.addWidget(role_label)
+
+        # Timestamp label
+        timestamp_text = format_timestamp(self._timestamp)
+        self._timestamp_label = QLabel(timestamp_text)
+        self._timestamp_label.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_disabled};
+                font-size: 11px;
+                font-family: {fonts.ui};
+                background: transparent;
+            }}
+        """)
+        header_row.addWidget(self._timestamp_label)
 
         header_row.addStretch()
 
@@ -530,20 +573,32 @@ class ChatPanel(QWidget):
         self._scroll_button.hide()
         self._scroll_to_bottom()
 
-    def add_user_message(self, content: str) -> None:
+    def add_user_message(
+        self,
+        content: str,
+        timestamp: Optional[datetime] = None
+    ) -> None:
         """Add a user message to the chat.
 
         Args:
             content: Message text
+            timestamp: Message timestamp (defaults to now)
         """
-        bubble = MessageBubble("user", content)
+        bubble = MessageBubble("user", content, timestamp=timestamp)
         self._add_bubble(bubble, align_right=True)
 
-    def start_assistant_message(self) -> None:
-        """Start a new assistant message for streaming."""
+    def start_assistant_message(
+        self,
+        timestamp: Optional[datetime] = None
+    ) -> None:
+        """Start a new assistant message for streaming.
+
+        Args:
+            timestamp: Message timestamp (defaults to now)
+        """
         self._is_generating = True
         self._user_scrolled_up = False
-        bubble = MessageBubble("assistant", "")
+        bubble = MessageBubble("assistant", "", timestamp=timestamp)
         bubble.show_typing()
         self._current_assistant_bubble = bubble
         self._add_bubble(bubble)
