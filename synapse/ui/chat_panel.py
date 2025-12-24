@@ -551,6 +551,14 @@ class ChatPanel(QWidget):
         self._user_scrolled_up = False
         self._is_generating = False
         self._next_message_index = 0
+
+        # Qt-safe streaming buffer - chunks are added from async code,
+        # timer flushes to widget on main thread
+        self._streaming_buffer: list[str] = []
+        self._update_timer = QTimer(self)
+        self._update_timer.timeout.connect(self._flush_streaming_buffer)
+        self._update_timer.setInterval(50)  # Update every 50ms
+
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -670,8 +678,18 @@ class ChatPanel(QWidget):
         Returns:
             Message index
         """
+        # Stop any existing stream first
+        if self._update_timer.isActive():
+            self._update_timer.stop()
+            self._flush_streaming_buffer()
+
         self._is_generating = True
         self._user_scrolled_up = False
+
+        # Clear streaming buffer and start timer
+        self._streaming_buffer.clear()
+        self._update_timer.start()
+
         bubble = MessageBubble("assistant", "", timestamp=timestamp)
         bubble.show_typing()
         self._current_assistant_bubble = bubble
@@ -687,29 +705,83 @@ class ChatPanel(QWidget):
         self._add_bubble(bubble)
         return message_index
 
-    def append_to_assistant_message(self, text: str) -> None:
-        """Append text to the current assistant message.
+    def append_streaming_chunk(self, text: str) -> None:
+        """Add a streaming chunk to the buffer (Qt-safe from async context).
+
+        This method only adds to the buffer. The timer will flush
+        to the widget on the Qt main thread.
 
         Args:
-            text: Text to append
+            text: Text chunk to add
         """
-        if self._current_assistant_bubble:
+        if self._current_assistant_bubble and text:
+            self._streaming_buffer.append(text)
+
+    def _flush_streaming_buffer(self) -> None:
+        """Flush the streaming buffer to the widget (runs on Qt main thread)."""
+        if not self._streaming_buffer:
+            return
+
+        if not self._current_assistant_bubble:
+            # No bubble to update, clear buffer
+            self._streaming_buffer.clear()
+            return
+
+        # Get all pending chunks atomically
+        chunks = self._streaming_buffer.copy()
+        self._streaming_buffer.clear()
+
+        try:
             # Hide typing on first content
             if not self._current_assistant_bubble._raw_content:
                 self._current_assistant_bubble.hide_typing()
-            self._current_assistant_bubble.append_content(text)
+
+            # Get current content and append new chunks
+            current_text = self._current_assistant_bubble._raw_content
+            new_text = current_text + ''.join(chunks)
+            self._current_assistant_bubble.set_content(new_text)
 
             # Only auto-scroll if user hasn't scrolled up
             if not self._user_scrolled_up:
                 self._scroll_to_bottom()
 
+        except RuntimeError:
+            # Widget was deleted mid-operation, stop streaming
+            self._update_timer.stop()
+            self._streaming_buffer.clear()
+            self._current_assistant_bubble = None
+
+    def append_to_assistant_message(self, text: str) -> None:
+        """Append text to the current assistant message.
+
+        This is the Qt-safe version that buffers chunks.
+
+        Args:
+            text: Text to append
+        """
+        # Delegate to buffer-based method
+        self.append_streaming_chunk(text)
+
     def finish_assistant_message(self) -> None:
         """Mark the current assistant message as complete."""
+        # Stop the update timer
+        self._update_timer.stop()
+
+        # Flush any remaining chunks
+        if self._streaming_buffer and self._current_assistant_bubble:
+            self._flush_streaming_buffer()
+
         self._is_generating = False
         self._user_scrolled_up = False
         self._scroll_button.hide()
+        self._streaming_buffer.clear()
+
         if self._current_assistant_bubble:
-            self._current_assistant_bubble.hide_typing()
+            try:
+                self._current_assistant_bubble.hide_typing()
+            except RuntimeError:
+                pass  # Widget already deleted
+
         self._current_assistant_bubble = None
 
     def add_error_message(self, error: str) -> None:
@@ -718,12 +790,18 @@ class ChatPanel(QWidget):
         Args:
             error: Error text
         """
+        # Stop streaming
+        self._update_timer.stop()
+        self._streaming_buffer.clear()
         self._is_generating = False
         self._scroll_button.hide()
 
         # Hide typing if showing
         if self._current_assistant_bubble:
-            self._current_assistant_bubble.hide_typing()
+            try:
+                self._current_assistant_bubble.hide_typing()
+            except RuntimeError:
+                pass  # Widget already deleted
 
         bubble = MessageBubble("assistant", f"**Error:** {error}")
         # Style with error color
@@ -804,6 +882,10 @@ class ChatPanel(QWidget):
 
     def clear(self) -> None:
         """Clear all messages from the chat."""
+        # Stop streaming if active
+        self._update_timer.stop()
+        self._streaming_buffer.clear()
+
         # Remove all widgets from layout
         while self.messages_layout.count():
             item = self.messages_layout.takeAt(0)
