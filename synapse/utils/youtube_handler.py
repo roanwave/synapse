@@ -14,6 +14,7 @@ try:
         TranscriptsDisabled,
         NoTranscriptFound,
         VideoUnavailable,
+        CouldNotRetrieveTranscript,
     )
     YOUTUBE_API_AVAILABLE = True
 except ImportError:
@@ -23,6 +24,7 @@ except ImportError:
     TranscriptsDisabled = Exception
     NoTranscriptFound = Exception
     VideoUnavailable = Exception
+    CouldNotRetrieveTranscript = Exception
 
 
 # Regex patterns for YouTube URLs
@@ -114,31 +116,34 @@ def fetch_transcript(video_id: str) -> Tuple[Optional[YouTubeTranscript], Option
         return None, "YouTube transcript API not installed. Run: pip install youtube-transcript-api"
 
     try:
-        # Use fetch() - the correct API method
-        # Returns list of dicts: [{'text': '...', 'start': 0.0, 'duration': 2.5}, ...]
-        transcript_data = YouTubeTranscriptApi.fetch(
+        # Create API instance and fetch transcript
+        # api.fetch() returns a FetchedTranscript object (iterable)
+        api = YouTubeTranscriptApi()
+        fetched = api.fetch(
             video_id,
-            languages=['en', 'en-US', 'en-GB']
+            languages=['en', 'en-US', 'en-GB'],
+            preserve_formatting=False
         )
 
-        # Build text and calculate duration
+        # FetchedTranscript is iterable - each item is a FetchedTranscriptSnippet
+        # with attributes: .text, .start, .duration
         text_parts = []
         total_duration = 0
 
-        for entry in transcript_data:
-            text_parts.append(entry['text'])
-            end_time = entry['start'] + entry.get('duration', 0)
+        for snippet in fetched:
+            text_parts.append(snippet.text)
+            end_time = snippet.start + snippet.duration
             if end_time > total_duration:
                 total_duration = end_time
 
         full_text = ' '.join(text_parts)
 
         return YouTubeTranscript(
-            video_id=video_id,
+            video_id=fetched.video_id,
             transcript_text=full_text,
             duration_seconds=int(total_duration),
-            language='en',
-            is_auto_generated=False,  # API doesn't expose this with fetch()
+            language=fetched.language_code,
+            is_auto_generated=fetched.is_generated,
         ), None
 
     except TranscriptsDisabled:
@@ -147,6 +152,8 @@ def fetch_transcript(video_id: str) -> Tuple[Optional[YouTubeTranscript], Option
         return None, "Video is unavailable (private, deleted, or restricted)"
     except NoTranscriptFound:
         return None, "No English transcript available for this video"
+    except CouldNotRetrieveTranscript as e:
+        return None, f"Could not retrieve transcript: {str(e)}"
     except Exception as e:
         return None, f"Failed to fetch transcript: {str(e)}"
 
