@@ -578,11 +578,20 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.status_bar.showMessage(f"YouTube fetch error: {str(e)}", 5000)
 
-        # Continue with message submission
-        self._continue_message_submission(message)
+        # Continue with message submission - await the full async flow
+        await self._continue_message_submission_async(message)
 
     def _continue_message_submission(self, message: str) -> None:
-        """Continue message submission after optional YouTube fetch.
+        """Continue message submission (sync entry point).
+
+        Args:
+            message: The user's message
+        """
+        # Schedule the async continuation
+        asyncio.ensure_future(self._continue_message_submission_async(message))
+
+    async def _continue_message_submission_async(self, message: str) -> None:
+        """Continue message submission after optional YouTube fetch (async).
 
         Args:
             message: The user's message
@@ -607,8 +616,8 @@ class MainWindow(QMainWindow):
         self.sidebar.set_regenerate_enabled(False)
         self.chat_panel.start_assistant_message()
 
-        # Run the async stream with RAG in the event loop
-        asyncio.ensure_future(self._stream_response_with_rag(message))
+        # Await the streaming response with RAG
+        await self._stream_response_with_rag(message)
 
     async def _stream_response_with_rag(self, user_message: str) -> None:
         """Stream a response with RAG retrieval.
