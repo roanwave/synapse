@@ -114,9 +114,9 @@ def fetch_transcript(video_id: str) -> Tuple[Optional[YouTubeTranscript], Option
         return None, "YouTube transcript API not installed. Run: pip install youtube-transcript-api"
 
     try:
-        # Use get_transcript() - the correct API method
+        # Use fetch() - the correct API method
         # Returns list of dicts: [{'text': '...', 'start': 0.0, 'duration': 2.5}, ...]
-        transcript_data = YouTubeTranscriptApi.get_transcript(
+        transcript_data = YouTubeTranscriptApi.fetch(
             video_id,
             languages=['en', 'en-US', 'en-GB']
         )
@@ -138,7 +138,7 @@ def fetch_transcript(video_id: str) -> Tuple[Optional[YouTubeTranscript], Option
             transcript_text=full_text,
             duration_seconds=int(total_duration),
             language='en',
-            is_auto_generated=False,  # API doesn't expose this with get_transcript
+            is_auto_generated=False,  # API doesn't expose this with fetch()
         ), None
 
     except TranscriptsDisabled:
