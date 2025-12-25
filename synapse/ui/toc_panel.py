@@ -241,17 +241,43 @@ class TOCPanel(QWidget):
 
     def _rebuild_entries(self) -> None:
         """Rebuild the entry widgets."""
-        # Clear existing entries (except stretch)
-        while self._content_layout.count() > 1:
-            item = self._content_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        # Remove only TOC entry widgets, NOT the empty label or stretch
+        # Collect widgets to remove first to avoid modifying during iteration
+        widgets_to_remove = []
+        for i in range(self._content_layout.count()):
+            item = self._content_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                # Keep the empty label, remove TOCEntryWidget instances
+                if widget != self._empty_label:
+                    widgets_to_remove.append(widget)
 
-        # Show/hide empty state
-        self._empty_label.setVisible(len(self._entries) == 0)
+        for widget in widgets_to_remove:
+            self._content_layout.removeWidget(widget)
+            widget.deleteLater()
+
+        # Show/hide empty state - safely check if label still exists
+        has_entries = len(self._entries) > 0
+        try:
+            self._empty_label.setVisible(not has_entries)
+        except RuntimeError:
+            # Label was somehow deleted, recreate it
+            self._empty_label = QLabel("No sections yet")
+            self._empty_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {theme.text_muted};
+                    font-size: {metrics.font_small}px;
+                    font-family: {fonts.ui};
+                    padding: 20px;
+                }}
+            """)
+            self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._empty_label.setVisible(not has_entries)
 
         if not self._entries:
-            self._content_layout.insertWidget(0, self._empty_label)
+            # Ensure empty label is in layout
+            if self._content_layout.indexOf(self._empty_label) < 0:
+                self._content_layout.insertWidget(0, self._empty_label)
             return
 
         # Find current section
