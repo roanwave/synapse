@@ -35,6 +35,20 @@ class AppSettings:
     conversations_dir: Path = Path.home() / ".synapse" / "conversations"
     artifacts_dir: Path = Path.home() / ".synapse" / "artifacts"
 
+    # Timeouts (in seconds)
+    artifact_generation_timeout: int = 30
+    task_cancellation_timeout: float = 2.0
+    streaming_chunk_interval_ms: int = 50
+
+    # Limits
+    session_list_limit: int = 100
+    rag_retrieval_k: int = 5
+    rag_search_k: int = 10
+    context_threshold: float = 0.80
+
+    # Embedding dimensions
+    embedding_dimension: int = 1536  # text-embedding-3-small
+
     def __post_init__(self) -> None:
         """Ensure directories exist."""
         self.app_data_dir.mkdir(parents=True, exist_ok=True)

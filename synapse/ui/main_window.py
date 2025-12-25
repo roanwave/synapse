@@ -553,12 +553,14 @@ class MainWindow(QMainWindow):
 
         self.status_bar.showMessage(f"Background error: {error_msg}", 5000)
 
-    async def _cancel_all_tasks(self, timeout: float = 2.0) -> None:
+    async def _cancel_all_tasks(self, timeout: float = None) -> None:
         """Cancel all active tasks and wait for them to finish.
 
         Args:
-            timeout: Maximum time to wait for cancellation
+            timeout: Maximum time to wait for cancellation (uses settings default)
         """
+        if timeout is None:
+            timeout = settings.task_cancellation_timeout
         if not self._active_tasks:
             return
 
@@ -1106,7 +1108,7 @@ class MainWindow(QMainWindow):
             # Initialize vector store WITHOUT persistence path
             # Each session starts fresh to prevent context contamination
             self._vector_store = FAISSVectorStore(
-                dimension=1536,  # text-embedding-3-small
+                dimension=settings.embedding_dimension,
                 index_path=None,  # No persistence - fresh each session
             )
 
@@ -1345,10 +1347,14 @@ class MainWindow(QMainWindow):
                 query_embedding = await self._document_indexer.get_query_embedding(query)
 
                 # Vector search
-                vector_results = self._vector_store.query(query_embedding, k=10)
+                vector_results = self._vector_store.query(
+                    query_embedding, k=settings.rag_search_k
+                )
 
                 # BM25 search
-                bm25_results = self._bm25_client.query(query, k=10)
+                bm25_results = self._bm25_client.query(
+                    query, k=settings.rag_search_k
+                )
 
                 # Reciprocal rank fusion
                 chunks_dict = {c.chunk.chunk_id: c.chunk for c in vector_results}
@@ -1363,7 +1369,7 @@ class MainWindow(QMainWindow):
 
                 # Apply blacklist filter
                 results = []
-                for chunk_id, score in fused[:5]:  # Top 5
+                for chunk_id, score in fused[:settings.rag_retrieval_k]:
                     # Find the vector result for this chunk
                     vector_result = next(
                         (r for r in vector_results if r.chunk.chunk_id == chunk_id),
@@ -1613,7 +1619,8 @@ class MainWindow(QMainWindow):
         task = asyncio.create_task(generate())
 
         # Run Qt event loop until task completes (with timeout)
-        QTimer.singleShot(30000, loop.quit)  # 30 second timeout
+        timeout_ms = settings.artifact_generation_timeout * 1000
+        QTimer.singleShot(timeout_ms, loop.quit)
         loop.exec()
 
         # Cancel task if still running (timeout)
