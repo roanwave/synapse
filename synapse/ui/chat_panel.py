@@ -1,8 +1,7 @@
 """Chat panel for displaying conversation history - Premium styling."""
 
 from datetime import datetime
-from typing import Optional, Any
-import traceback
+from typing import Optional
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -22,52 +21,6 @@ from PySide6.QtGui import QFont, QDesktopServices
 
 from ..config.themes import theme, fonts, metrics
 from ..utils.markdown_renderer import render_markdown, strip_markdown
-
-
-# Global error tracker for Qt object deletion debugging
-_qt_errors: list[dict] = []
-
-
-def safe_bubble_access(bubble: Any, attr_name: str, default: Any = None) -> Any:
-    """Safely access bubble attributes, track errors for debugging.
-
-    Args:
-        bubble: The message bubble widget
-        attr_name: Name of the attribute to access
-        default: Default value if access fails
-
-    Returns:
-        The attribute value, or default if access failed
-    """
-    try:
-        return getattr(bubble, attr_name, default)
-    except RuntimeError as e:
-        error_info = {
-            'error': str(e),
-            'attribute': attr_name,
-            'traceback': traceback.format_exc(),
-            'stack': ''.join(traceback.format_stack()),
-        }
-        _qt_errors.append(error_info)
-        print(f"\n{'='*80}")
-        print(f"QT ERROR accessing '{attr_name}': {e}")
-        print(f"Stack trace:")
-        traceback.print_stack()
-        print(f"{'='*80}\n")
-        return default
-
-
-def dump_qt_errors() -> None:
-    """Print all recent Qt errors for debugging."""
-    print(f"\n{'='*80}")
-    print("RECENT QT OBJECT DELETION ERRORS:")
-    print(f"{'='*80}")
-    for i, err in enumerate(_qt_errors[-10:]):  # Last 10 errors
-        print(f"\n--- Error {i+1} ---")
-        print(f"Attribute: {err.get('attribute')}")
-        print(f"Error: {err.get('error')}")
-        print(f"Traceback:\n{err.get('traceback')}")
-    print(f"{'='*80}\n")
 
 
 def format_timestamp(dt: datetime) -> str:
@@ -779,49 +732,21 @@ class ChatPanel(QWidget):
         self._streaming_buffer.clear()
 
         try:
-            # Check if bubble is still valid before accessing
-            bubble = self._current_assistant_bubble
-
-            # Use safe access for _raw_content
-            raw_content = safe_bubble_access(bubble, '_raw_content', '')
-            if raw_content is None:
-                # Bubble was deleted
-                print("[DEBUG] _flush_streaming_buffer: bubble._raw_content returned None (deleted?)")
-                self._update_timer.stop()
-                self._current_assistant_bubble = None
-                return
-
             # Hide typing on first content
-            if not raw_content:
-                try:
-                    bubble.hide_typing()
-                except RuntimeError as e:
-                    print(f"[DEBUG] _flush_streaming_buffer: hide_typing() failed: {e}")
-                    traceback.print_exc()
-                    self._update_timer.stop()
-                    self._current_assistant_bubble = None
-                    return
+            if not self._current_assistant_bubble._raw_content:
+                self._current_assistant_bubble.hide_typing()
 
-            # Append new chunks
-            new_text = raw_content + ''.join(chunks)
-            try:
-                bubble.set_content(new_text)
-            except RuntimeError as e:
-                print(f"[DEBUG] _flush_streaming_buffer: set_content() failed: {e}")
-                traceback.print_exc()
-                self._update_timer.stop()
-                self._current_assistant_bubble = None
-                return
+            # Get current content and append new chunks
+            current_text = self._current_assistant_bubble._raw_content
+            new_text = current_text + ''.join(chunks)
+            self._current_assistant_bubble.set_content(new_text)
 
             # Only auto-scroll if user hasn't scrolled up
             if not self._user_scrolled_up:
                 self._scroll_to_bottom()
 
-        except RuntimeError as e:
+        except RuntimeError:
             # Widget was deleted mid-operation, stop streaming
-            print(f"[DEBUG] _flush_streaming_buffer: RuntimeError caught: {e}")
-            traceback.print_exc()
-            dump_qt_errors()
             self._update_timer.stop()
             self._streaming_buffer.clear()
             self._current_assistant_bubble = None
@@ -865,23 +790,6 @@ class ChatPanel(QWidget):
         Args:
             error: Error text
         """
-        # Detect Qt object deletion errors and dump diagnostics
-        if "Internal C++ object" in error or "wrapped C/C++ object" in error:
-            print("\n" + "=" * 80)
-            print("QT OBJECT DELETION ERROR DETECTED IN add_error_message")
-            print("=" * 80)
-            print(f"Error message: {error}")
-            print("\nCurrent stack trace:")
-            traceback.print_stack()
-            print("\nRecent Qt errors tracked:")
-            dump_qt_errors()
-            print("\nCurrent state:")
-            print(f"  _bubbles count: {len(self._bubbles)}")
-            print(f"  _current_assistant_bubble: {self._current_assistant_bubble}")
-            print(f"  _is_generating: {self._is_generating}")
-            print(f"  _streaming_buffer len: {len(self._streaming_buffer)}")
-            print("=" * 80 + "\n")
-
         # Stop streaming
         self._update_timer.stop()
         self._streaming_buffer.clear()
@@ -892,8 +800,8 @@ class ChatPanel(QWidget):
         if self._current_assistant_bubble:
             try:
                 self._current_assistant_bubble.hide_typing()
-            except RuntimeError as e:
-                print(f"[DEBUG] add_error_message: hide_typing() failed: {e}")
+            except RuntimeError:
+                pass  # Widget already deleted
 
         bubble = MessageBubble("assistant", f"**Error:** {error}")
         # Style with error color
@@ -1001,19 +909,11 @@ class ChatPanel(QWidget):
         Args:
             message_index: The index of the message to scroll to
         """
-        # Find the bubble with this index - iterate over a copy to handle deletions
-        for bubble, idx in list(self._message_indices.items()):
+        # Find the bubble with this index
+        for bubble, idx in self._message_indices.items():
             if idx == message_index:
-                try:
-                    # Scroll to show this bubble
-                    self.scroll_area.ensureWidgetVisible(bubble, 0, 50)
-                except RuntimeError as e:
-                    print(f"[DEBUG] scroll_to_message: ensureWidgetVisible failed: {e}")
-                    # Remove deleted bubble from tracking
-                    if bubble in self._message_indices:
-                        del self._message_indices[bubble]
-                    if bubble in self._bubbles:
-                        self._bubbles.remove(bubble)
+                # Scroll to show this bubble
+                self.scroll_area.ensureWidgetVisible(bubble, 0, 50)
                 return
 
     def get_message_count(self) -> int:
@@ -1030,28 +930,21 @@ class ChatPanel(QWidget):
         Returns:
             The content of the removed message, or None if no message found
         """
-        # Find and remove the last assistant bubble - use list() to avoid modification during iteration
-        for bubble in reversed(list(self._bubbles)):
-            role = safe_bubble_access(bubble, 'role', None)
-            if role is None:
-                # Bubble was deleted, skip and clean up
-                print(f"[DEBUG] remove_last_assistant_message: found deleted bubble, cleaning up")
-                if bubble in self._bubbles:
-                    self._bubbles.remove(bubble)
-                if bubble in self._message_indices:
-                    del self._message_indices[bubble]
-                continue
-
-            if role == "assistant":
-                content = safe_bubble_access(bubble, '_raw_content', '')
+        # Find and remove the last assistant bubble
+        for bubble in reversed(self._bubbles):
+            if bubble.role == "assistant":
+                try:
+                    content = bubble._raw_content
+                except RuntimeError:
+                    # Widget already deleted
+                    content = ""
 
                 # Clear current bubble reference if this is it
                 if bubble is self._current_assistant_bubble:
                     self._current_assistant_bubble = None
 
                 # Remove from tracking
-                if bubble in self._bubbles:
-                    self._bubbles.remove(bubble)
+                self._bubbles.remove(bubble)
                 if bubble in self._message_indices:
                     del self._message_indices[bubble]
 
@@ -1059,8 +952,8 @@ class ChatPanel(QWidget):
                 try:
                     bubble.setParent(None)
                     bubble.deleteLater()
-                except RuntimeError as e:
-                    print(f"[DEBUG] remove_last_assistant_message: deleteLater failed: {e}")
+                except RuntimeError:
+                    pass  # Already deleted
 
                 return content
         return None
@@ -1071,20 +964,15 @@ class ChatPanel(QWidget):
         Returns:
             True if exchange was removed, False otherwise
         """
-        # Find last assistant - iterate over copy
+        # Find last assistant
         assistant_bubble = None
         user_bubble = None
 
-        for bubble in reversed(list(self._bubbles)):
-            role = safe_bubble_access(bubble, 'role', None)
-            if role is None:
-                # Skip deleted widgets and clean up
-                print(f"[DEBUG] remove_last_exchange: found deleted bubble, cleaning up")
-                if bubble in self._bubbles:
-                    self._bubbles.remove(bubble)
-                if bubble in self._message_indices:
-                    del self._message_indices[bubble]
-                continue
+        for bubble in reversed(self._bubbles):
+            try:
+                role = bubble.role
+            except RuntimeError:
+                continue  # Skip deleted widgets
 
             if role == "assistant" and assistant_bubble is None:
                 assistant_bubble = bubble
@@ -1108,12 +996,12 @@ class ChatPanel(QWidget):
                 del self._message_indices[user_bubble]
 
             # Safely delete widgets
-            for bbl in [assistant_bubble, user_bubble]:
+            for bubble in [assistant_bubble, user_bubble]:
                 try:
-                    bbl.setParent(None)
-                    bbl.deleteLater()
-                except RuntimeError as e:
-                    print(f"[DEBUG] remove_last_exchange: deleteLater failed: {e}")
+                    bubble.setParent(None)
+                    bubble.deleteLater()
+                except RuntimeError:
+                    pass  # Already deleted
 
             return True
 
@@ -1126,12 +1014,5 @@ class ChatPanel(QWidget):
             Current content or None if not streaming
         """
         if self._current_assistant_bubble:
-            content = safe_bubble_access(
-                self._current_assistant_bubble, '_raw_content', None
-            )
-            if content is None:
-                # Bubble was deleted
-                print("[DEBUG] get_current_assistant_content: bubble deleted, clearing reference")
-                self._current_assistant_bubble = None
-            return content
+            return self._current_assistant_bubble._raw_content
         return None
