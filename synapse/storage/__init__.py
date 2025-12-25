@@ -57,6 +57,48 @@ class Chunk:
             metadata=metadata or {},
         )
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "chunk_id": self.chunk_id,
+            "parent_id": self.parent_id,
+            "content": self.content,
+            "source_file": self.source_file,
+            "page_or_section": self.page_or_section,
+            "embedding": self.embedding,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Chunk":
+        """Create from dictionary.
+
+        Args:
+            data: Dictionary with chunk data
+
+        Returns:
+            Chunk instance
+
+        Raises:
+            KeyError: If required fields are missing
+            TypeError: If field types are invalid
+        """
+        # Validate required fields
+        required = ["chunk_id", "parent_id", "content", "source_file"]
+        for field_name in required:
+            if field_name not in data:
+                raise KeyError(f"Missing required field: {field_name}")
+
+        return cls(
+            chunk_id=str(data["chunk_id"]),
+            parent_id=str(data["parent_id"]),
+            content=str(data["content"]),
+            source_file=str(data["source_file"]),
+            page_or_section=str(data.get("page_or_section", "")),
+            embedding=data.get("embedding"),
+            metadata=data.get("metadata", {}),
+        )
+
 
 @dataclass
 class ParentDocument:
@@ -99,6 +141,57 @@ class ParentDocument:
             full_content=full_content,
             source_weight=source_weight,
             metadata=metadata or {},
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "doc_id": self.doc_id,
+            "source_file": self.source_file,
+            "title": self.title,
+            "full_content": self.full_content,
+            "chunk_ids": self.chunk_ids,
+            "created_at": self.created_at.isoformat(),
+            "source_weight": self.source_weight,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ParentDocument":
+        """Create from dictionary.
+
+        Args:
+            data: Dictionary with parent document data
+
+        Returns:
+            ParentDocument instance
+
+        Raises:
+            KeyError: If required fields are missing
+            TypeError: If field types are invalid
+        """
+        # Validate required fields
+        required = ["doc_id", "source_file", "title", "full_content"]
+        for field_name in required:
+            if field_name not in data:
+                raise KeyError(f"Missing required field: {field_name}")
+
+        # Parse created_at
+        created_at = data.get("created_at")
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        elif created_at is None:
+            created_at = datetime.now()
+
+        return cls(
+            doc_id=str(data["doc_id"]),
+            source_file=str(data["source_file"]),
+            title=str(data["title"]),
+            full_content=str(data["full_content"]),
+            chunk_ids=list(data.get("chunk_ids", [])),
+            created_at=created_at,
+            source_weight=float(data.get("source_weight", 1.0)),
+            metadata=data.get("metadata", {}),
         )
 
 

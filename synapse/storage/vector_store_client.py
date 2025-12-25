@@ -9,7 +9,6 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 import json
-import pickle
 
 import numpy as np
 
@@ -357,15 +356,24 @@ class FAISSVectorStore(VectorStoreClient):
             "id_to_idx": self._id_to_idx,
             "idx_to_id": {str(k): v for k, v in self._idx_to_id.items()},
         }
-        with open(self._index_path / "metadata.json", "w") as f:
+        with open(self._index_path / "metadata.json", "w", encoding="utf-8") as f:
             json.dump(metadata, f)
 
-        # Save chunks and parents (pickle for dataclasses)
-        with open(self._index_path / "chunks.pkl", "wb") as f:
-            pickle.dump(self._chunks, f)
+        # Save chunks as JSON (secure, no pickle)
+        chunks_data = {
+            chunk_id: chunk.to_dict()
+            for chunk_id, chunk in self._chunks.items()
+        }
+        with open(self._index_path / "chunks.json", "w", encoding="utf-8") as f:
+            json.dump(chunks_data, f)
 
-        with open(self._index_path / "parents.pkl", "wb") as f:
-            pickle.dump(self._parents, f)
+        # Save parents as JSON (secure, no pickle)
+        parents_data = {
+            doc_id: parent.to_dict()
+            for doc_id, parent in self._parents.items()
+        }
+        with open(self._index_path / "parents.json", "w", encoding="utf-8") as f:
+            json.dump(parents_data, f)
 
     def _load(self) -> None:
         """Load index and metadata from disk."""
@@ -381,7 +389,7 @@ class FAISSVectorStore(VectorStoreClient):
             # Load metadata
             metadata_file = self._index_path / "metadata.json"
             if metadata_file.exists():
-                with open(metadata_file, "r") as f:
+                with open(metadata_file, "r", encoding="utf-8") as f:
                     metadata = json.load(f)
                 self._dimension = metadata.get("dimension", self._dimension)
                 self._next_idx = metadata.get("next_idx", 0)
@@ -390,17 +398,33 @@ class FAISSVectorStore(VectorStoreClient):
                     int(k): v for k, v in metadata.get("idx_to_id", {}).items()
                 }
 
-            # Load chunks and parents
-            chunks_file = self._index_path / "chunks.pkl"
+            # Load chunks from JSON (with validation)
+            chunks_file = self._index_path / "chunks.json"
             if chunks_file.exists():
-                with open(chunks_file, "rb") as f:
-                    self._chunks = pickle.load(f)
+                with open(chunks_file, "r", encoding="utf-8") as f:
+                    chunks_data = json.load(f)
+                self._chunks = {}
+                for chunk_id, chunk_dict in chunks_data.items():
+                    try:
+                        self._chunks[chunk_id] = Chunk.from_dict(chunk_dict)
+                    except (KeyError, TypeError) as e:
+                        print(f"Warning: Skipping invalid chunk {chunk_id}: {e}")
 
-            parents_file = self._index_path / "parents.pkl"
+            # Load parents from JSON (with validation)
+            parents_file = self._index_path / "parents.json"
             if parents_file.exists():
-                with open(parents_file, "rb") as f:
-                    self._parents = pickle.load(f)
+                with open(parents_file, "r", encoding="utf-8") as f:
+                    parents_data = json.load(f)
+                self._parents = {}
+                for doc_id, parent_dict in parents_data.items():
+                    try:
+                        self._parents[doc_id] = ParentDocument.from_dict(parent_dict)
+                    except (KeyError, TypeError) as e:
+                        print(f"Warning: Skipping invalid parent {doc_id}: {e}")
 
-        except Exception:
-            # If loading fails, start fresh
+        except json.JSONDecodeError as e:
+            print(f"Warning: JSON decode error loading vector store: {e}")
+            self.clear()
+        except Exception as e:
+            print(f"Warning: Error loading vector store: {e}")
             self.clear()
