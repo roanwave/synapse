@@ -543,15 +543,66 @@ class MainWindow(QMainWindow):
             exc: The exception that was raised
         """
         task_name = task.get_name() if hasattr(task, 'get_name') else 'unknown'
-        print(f"Background task '{task_name}' error: {exc}")
+        error_msg = str(exc)
+
+        # Enhanced debug output for Qt object deletion errors
+        print("\n" + "=" * 80)
+        print("BACKGROUND TASK EXCEPTION CAUGHT")
+        print("=" * 80)
+        print(f"Task name: {task_name}")
+        print(f"Task: {task}")
+        print(f"Exception type: {type(exc).__name__}")
+        print(f"Error message: {error_msg}")
+        print("\nFull exception traceback:")
         traceback.print_exception(type(exc), exc, exc.__traceback__)
 
+        # Extra debug for Qt deletion errors
+        if "Internal C++ object" in error_msg or "wrapped C/C++ object" in error_msg:
+            print("\n" + "-" * 40)
+            print("QT OBJECT DELETION ERROR DETECTED!")
+            print("-" * 40)
+            print("This error occurs when a Qt widget is accessed after deletion.")
+            print("\nChecking chat_panel._qt_errors for more details...")
+            if hasattr(self, 'chat_panel'):
+                from .chat_panel import _qt_errors, dump_qt_errors
+                print(f"Number of tracked Qt errors: {len(_qt_errors)}")
+                dump_qt_errors()
+            print("\nCurrent stack trace:")
+            traceback.print_stack()
+
+        print("=" * 80 + "\n")
+
         # Show error to user
-        error_msg = str(exc)
         if len(error_msg) > 200:
             error_msg = error_msg[:200] + "..."
 
-        self.status_bar.showMessage(f"Background error: {error_msg}", 5000)
+        self._show_status_with_debug(f"Background error: {error_msg}", 5000)
+
+    def _show_status_with_debug(self, message: str, timeout: int = 0) -> None:
+        """Show message in status bar with Qt error debugging.
+
+        Args:
+            message: The message to display
+            timeout: How long to show (0 = until replaced)
+        """
+        # Detect Qt deletion errors and dump diagnostics
+        if "Internal C++ object" in message or "wrapped C/C++ object" in message:
+            print("\n" + "=" * 80)
+            print("QT DELETION ERROR BEING SHOWN IN STATUS BAR")
+            print("=" * 80)
+            print(f"Message: {message}")
+            print("\nStack trace of who called _show_status_with_debug:")
+            traceback.print_stack()
+
+            # Print recent Qt errors from chat_panel
+            if hasattr(self, 'chat_panel'):
+                from .chat_panel import _qt_errors, dump_qt_errors
+                print(f"\nNumber of tracked Qt errors: {len(_qt_errors)}")
+                dump_qt_errors()
+
+            print("=" * 80 + "\n")
+
+        self.status_bar.showMessage(message, timeout)
 
     async def _cancel_all_tasks(self, timeout: float = None) -> None:
         """Cancel all active tasks and wait for them to finish.
@@ -929,8 +980,22 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             error_msg = str(e)
+            # Enhanced debug for streaming errors
+            print("\n" + "=" * 80)
+            print("EXCEPTION IN _stream_response_with_rag")
+            print("=" * 80)
+            print(f"Exception type: {type(e).__name__}")
+            print(f"Error message: {error_msg}")
+            print("\nFull traceback:")
+            traceback.print_exc()
+            if "Internal C++ object" in error_msg or "wrapped C/C++ object" in error_msg:
+                print("\nQT OBJECT DELETION ERROR - dumping chat_panel errors:")
+                from .chat_panel import dump_qt_errors
+                dump_qt_errors()
+            print("=" * 80 + "\n")
+
             self.chat_panel.add_error_message(error_msg)
-            self.status_bar.showMessage(f"Error: {error_msg}", 5000)
+            self._show_status_with_debug(f"Error: {error_msg}", 5000)
 
         finally:
             self._is_streaming = False
@@ -2144,8 +2209,22 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             error_msg = str(e)
+            # Enhanced debug for side panel errors
+            print("\n" + "=" * 80)
+            print("EXCEPTION IN _stream_side_response")
+            print("=" * 80)
+            print(f"Exception type: {type(e).__name__}")
+            print(f"Error message: {error_msg}")
+            print("\nFull traceback:")
+            traceback.print_exc()
+            if "Internal C++ object" in error_msg or "wrapped C/C++ object" in error_msg:
+                print("\nQT OBJECT DELETION ERROR - dumping chat_panel errors:")
+                from .chat_panel import dump_qt_errors
+                dump_qt_errors()
+            print("=" * 80 + "\n")
+
             self._side_panel.add_assistant_message(f"Error: {error_msg}")
-            self.status_bar.showMessage(f"Side panel error: {error_msg}", 5000)
+            self._show_status_with_debug(f"Side panel error: {error_msg}", 5000)
 
         finally:
             self._side_streaming = False
