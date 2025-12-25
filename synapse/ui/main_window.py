@@ -1,7 +1,8 @@
 """Main application window."""
 
 import asyncio
-from typing import Optional, List, Dict, Any
+import traceback
+from typing import Optional, List, Dict, Any, Set
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QMenuBar,
     QMenu,
     QFileDialog,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QShortcut, QKeySequence, QAction
@@ -83,6 +85,12 @@ class MainWindow(QMainWindow):
         self._interrupt_requested = False
         self._summarization_in_progress = False
         self._focus_mode = False
+
+        # Async task tracking and concurrency control
+        self._active_tasks: Set[asyncio.Task] = set()
+        self._streaming_lock = asyncio.Lock()
+        self._summarization_lock = asyncio.Lock()
+        self._indexing_lock = asyncio.Lock()
 
         # RAG components (initialized lazily when first document added)
         self._vector_store: Optional[FAISSVectorStore] = None
@@ -488,6 +496,91 @@ class MainWindow(QMainWindow):
         self._switch_model(default_id)
         self.sidebar.set_model(default_id)
 
+    # ==================== Task Management ====================
+
+    def _create_task(self, coro, name: str = "") -> asyncio.Task:
+        """Create a tracked async task with error handling.
+
+        Args:
+            coro: Coroutine to run
+            name: Optional task name for debugging
+
+        Returns:
+            The created task
+        """
+        task = asyncio.create_task(coro)
+        if name:
+            task.set_name(name)
+        self._active_tasks.add(task)
+        task.add_done_callback(self._on_task_done)
+        return task
+
+    def _on_task_done(self, task: asyncio.Task) -> None:
+        """Handle task completion and exceptions.
+
+        Args:
+            task: The completed task
+        """
+        # Remove from active set
+        self._active_tasks.discard(task)
+
+        # Check for exceptions (but not cancellation)
+        if task.cancelled():
+            return
+
+        try:
+            exc = task.exception()
+            if exc:
+                self._handle_task_exception(task, exc)
+        except asyncio.InvalidStateError:
+            pass  # Task not done yet
+
+    def _handle_task_exception(self, task: asyncio.Task, exc: Exception) -> None:
+        """Handle exception from a background task.
+
+        Args:
+            task: The task that raised the exception
+            exc: The exception that was raised
+        """
+        task_name = task.get_name() if hasattr(task, 'get_name') else 'unknown'
+        print(f"Background task '{task_name}' error: {exc}")
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
+
+        # Show error to user
+        error_msg = str(exc)
+        if len(error_msg) > 200:
+            error_msg = error_msg[:200] + "..."
+
+        self.status_bar.showMessage(f"Background error: {error_msg}", 5000)
+
+    async def _cancel_all_tasks(self, timeout: float = 2.0) -> None:
+        """Cancel all active tasks and wait for them to finish.
+
+        Args:
+            timeout: Maximum time to wait for cancellation
+        """
+        if not self._active_tasks:
+            return
+
+        # Cancel all tasks
+        for task in self._active_tasks:
+            task.cancel()
+
+        # Wait for cancellation with timeout
+        if self._active_tasks:
+            try:
+                await asyncio.wait(
+                    self._active_tasks,
+                    timeout=timeout,
+                    return_when=asyncio.ALL_COMPLETED
+                )
+            except Exception:
+                pass  # Ignore errors during cleanup
+
+        self._active_tasks.clear()
+
+    # ==================== Model Management ====================
+
     def _switch_model(self, model_id: str) -> bool:
         """Switch to a different model.
 
@@ -603,7 +696,10 @@ class MainWindow(QMainWindow):
                 # Fetch transcript asynchronously to avoid blocking UI
                 self.status_bar.showMessage("Fetching YouTube transcript...", 0)
                 self.input_panel.set_enabled(False)
-                asyncio.ensure_future(self._fetch_youtube_and_send(video_id, message))
+                self._create_task(
+                    self._fetch_youtube_and_send(video_id, message),
+                    name="youtube_fetch"
+                )
                 return
 
         # No YouTube URL - proceed normally
@@ -669,7 +765,10 @@ class MainWindow(QMainWindow):
             message: The user's message
         """
         # Schedule the async continuation
-        asyncio.ensure_future(self._continue_message_submission_async(message))
+        self._create_task(
+            self._continue_message_submission_async(message),
+            name="message_submission"
+        )
 
     async def _continue_message_submission_async(self, message: str) -> None:
         """Continue message submission after optional YouTube fetch (async).
@@ -718,6 +817,30 @@ class MainWindow(QMainWindow):
         assistant_msg_index: int = -1
     ) -> None:
         """Stream a response with RAG retrieval.
+
+        Args:
+            user_message: The user's message for RAG query
+            assistant_msg_index: Index of the assistant message for TOC
+        """
+        # Acquire streaming lock to prevent concurrent operations
+        async with self._streaming_lock:
+            # Check if summarization is in progress
+            if self._summarization_lock.locked():
+                self.status_bar.showMessage(
+                    "Waiting for summarization to complete...", 2000
+                )
+                # Wait for summarization to finish
+                async with self._summarization_lock:
+                    pass
+
+            await self._stream_response_with_rag_impl(user_message, assistant_msg_index)
+
+    async def _stream_response_with_rag_impl(
+        self,
+        user_message: str,
+        assistant_msg_index: int = -1
+    ) -> None:
+        """Implementation of RAG streaming (called with lock held).
 
         Args:
             user_message: The user's message for RAG query
@@ -846,7 +969,7 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Regenerating response...", 2000)
 
         # Run the async stream
-        asyncio.ensure_future(self._stream_response())
+        self._create_task(self._stream_response(), name="regenerate_stream")
 
     def _on_set_waypoint(self) -> None:
         """Handle waypoint set request."""
@@ -868,72 +991,77 @@ class MainWindow(QMainWindow):
         if self._summarization_in_progress or not self._adapter:
             return
 
-        asyncio.ensure_future(self._perform_summarization())
+        self._create_task(self._perform_summarization(), name="summarization")
 
     async def _perform_summarization(self) -> None:
         """Perform context summarization in the background."""
         if self._summarization_in_progress:
             return
 
-        self._summarization_in_progress = True
+        # Don't start if streaming is in progress
+        if self._streaming_lock.locked():
+            return
 
-        try:
-            # Get waypoint boundary if any
-            boundary = self._waypoint_manager.get_summarization_boundary(
-                self._prompt_builder.get_message_count()
-            )
+        async with self._summarization_lock:
+            self._summarization_in_progress = True
 
-            # Get messages to summarize
-            messages = self._prompt_builder.get_messages_for_summarization(boundary)
-            if not messages:
-                return
-
-            # Get the highest index being summarized
-            highest_index = self._prompt_builder.get_highest_summarizable_index(boundary)
-            if highest_index < 0:
-                return
-
-            # Generate summary
-            result = await self._summary_generator.generate_summary(
-                messages=messages,
-                adapter=self._adapter,
-                intent_mode=self._intent_tracker.current_mode,
-            )
-
-            if result.success:
-                # Set summary in prompt builder
-                self._prompt_builder.set_summary(result.xml_summary)
-
-                # Mark messages as summarized
-                self._prompt_builder.mark_messages_summarized(highest_index)
-
-                # Update context manager
-                if self._context_manager:
-                    self._context_manager.mark_messages_summarized(
-                        len(self._prompt_builder.history.get_summarized_messages())
-                    )
-                    self._context_manager.clear_drift_signal()
-
-                # Clear waypoints that were summarized past
-                self._waypoint_manager.clear_summarized_waypoints(highest_index)
-
-                # Reset drift detector with remaining messages
-                active_messages = self._prompt_builder.history.get_active_messages()
-                self._drift_detector.force_recalculate_centroid(
-                    [m.content for m in active_messages]
+            try:
+                # Get waypoint boundary if any
+                boundary = self._waypoint_manager.get_summarization_boundary(
+                    self._prompt_builder.get_message_count()
                 )
 
-                # Update token count
-                self._update_token_count()
+                # Get messages to summarize
+                messages = self._prompt_builder.get_messages_for_summarization(boundary)
+                if not messages:
+                    return
 
-                # Silent - user should not see interruption
+                # Get the highest index being summarized
+                highest_index = self._prompt_builder.get_highest_summarizable_index(boundary)
+                if highest_index < 0:
+                    return
 
-        except Exception as e:
-            # Log error but don't interrupt user
-            self.status_bar.showMessage(f"Summarization failed: {e}", 3000)
+                # Generate summary
+                result = await self._summary_generator.generate_summary(
+                    messages=messages,
+                    adapter=self._adapter,
+                    intent_mode=self._intent_tracker.current_mode,
+                )
 
-        finally:
-            self._summarization_in_progress = False
+                if result.success:
+                    # Set summary in prompt builder
+                    self._prompt_builder.set_summary(result.xml_summary)
+
+                    # Mark messages as summarized
+                    self._prompt_builder.mark_messages_summarized(highest_index)
+
+                    # Update context manager
+                    if self._context_manager:
+                        self._context_manager.mark_messages_summarized(
+                            len(self._prompt_builder.history.get_summarized_messages())
+                        )
+                        self._context_manager.clear_drift_signal()
+
+                    # Clear waypoints that were summarized past
+                    self._waypoint_manager.clear_summarized_waypoints(highest_index)
+
+                    # Reset drift detector with remaining messages
+                    active_messages = self._prompt_builder.history.get_active_messages()
+                    self._drift_detector.force_recalculate_centroid(
+                        [m.content for m in active_messages]
+                    )
+
+                    # Update token count
+                    self._update_token_count()
+
+                    # Silent - user should not see interruption
+
+            except Exception as e:
+                # Log error but don't interrupt user
+                self.status_bar.showMessage(f"Summarization failed: {e}", 3000)
+
+            finally:
+                self._summarization_in_progress = False
 
     def _update_token_count(self) -> None:
         """Update the token count display and check thresholds."""
@@ -1012,7 +1140,7 @@ class MainWindow(QMainWindow):
             return
 
         # Index document asynchronously
-        asyncio.ensure_future(self._index_document(file_path))
+        self._create_task(self._index_document(file_path), name="document_indexing")
 
     async def _index_document(self, file_path: str) -> None:
         """Index a document for RAG.
@@ -1315,6 +1443,19 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Handle window close event - save session and window state."""
+        # Cancel all active async tasks
+        if self._active_tasks:
+            # Cancel tasks synchronously
+            for task in list(self._active_tasks):
+                task.cancel()
+            # Brief pause to let cancellations process
+            from PySide6.QtCore import QCoreApplication
+            QCoreApplication.processEvents()
+
+        # Stop any streaming timers
+        if hasattr(self, 'chat_panel') and hasattr(self.chat_panel, '_update_timer'):
+            self.chat_panel._update_timer.stop()
+
         # Save window state
         self._save_window_state()
 
@@ -1624,7 +1765,7 @@ class MainWindow(QMainWindow):
                 messages=messages,
                 models_used=models_used,
                 token_count=token_count,
-                session_id=self._session_id,
+                session_id=self._session_record.session_id,
             )
             Path(filepath).write_text(markdown_content, encoding="utf-8")
 
@@ -1813,7 +1954,10 @@ class MainWindow(QMainWindow):
         if not self._conversation_indexer or not self._search_dialog:
             return
 
-        asyncio.ensure_future(self._perform_conversation_search(query))
+        self._create_task(
+            self._perform_conversation_search(query),
+            name="conversation_search"
+        )
 
     async def _perform_conversation_search(self, query: str) -> None:
         """Perform semantic search across conversations.
@@ -1835,7 +1979,7 @@ class MainWindow(QMainWindow):
         if not self._conversation_indexer or not self._search_dialog:
             return
 
-        asyncio.ensure_future(self._index_all_sessions())
+        self._create_task(self._index_all_sessions(), name="index_sessions")
 
     async def _index_all_sessions(self) -> None:
         """Index all sessions for semantic search."""
@@ -1928,7 +2072,7 @@ class MainWindow(QMainWindow):
         # Stream response
         self._side_streaming = True
         self._side_panel.set_input_enabled(False)
-        asyncio.ensure_future(self._stream_side_response())
+        self._create_task(self._stream_side_response(), name="side_response")
 
     async def _stream_side_response(self) -> None:
         """Stream a response for the side panel."""

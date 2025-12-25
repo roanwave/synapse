@@ -2,12 +2,19 @@
 
 Stores completed conversation sessions as JSONL records
 for later retrieval and analysis.
+
+Uses atomic writes and file locking for data integrity.
 """
 
 import json
+import os
+import sys
+import tempfile
+import shutil
 from typing import List, Optional, Iterator
 from pathlib import Path
 from datetime import datetime
+from contextlib import contextmanager
 
 from . import SessionRecord
 
@@ -17,6 +24,9 @@ class ConversationStore:
 
     Stores sessions as JSONL (one JSON record per line) for
     efficient append-only writes and line-by-line reading.
+
+    Uses atomic writes (temp file + rename) and file locking
+    to prevent data corruption from concurrent access.
     """
 
     def __init__(self, archive_path: Path) -> None:
@@ -27,9 +37,85 @@ class ConversationStore:
         """
         self._archive_path = archive_path
         self._archive_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock_path = archive_path.with_suffix('.lock')
+
+    @contextmanager
+    def _file_lock(self):
+        """Cross-platform file locking context manager."""
+        lock_file = None
+        try:
+            # Create/open lock file
+            lock_file = open(self._lock_path, 'w')
+
+            # Platform-specific locking
+            if sys.platform == 'win32':
+                import msvcrt
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+            yield
+
+        finally:
+            if lock_file:
+                # Unlock
+                if sys.platform == 'win32':
+                    import msvcrt
+                    try:
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                    except OSError:
+                        pass  # Already unlocked
+                else:
+                    import fcntl
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+                lock_file.close()
+
+                # Clean up lock file
+                try:
+                    self._lock_path.unlink()
+                except OSError:
+                    pass  # May be held by another process
+
+    def _atomic_write(self, sessions: List[SessionRecord]) -> None:
+        """Atomically write sessions to archive file.
+
+        Uses write-to-temp-then-rename pattern for crash safety.
+
+        Args:
+            sessions: Sessions to write
+        """
+        # Create temp file in same directory (for atomic rename)
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=self._archive_path.parent,
+            suffix='.tmp'
+        )
+
+        try:
+            # Write to temp file
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                for session in sessions:
+                    json.dump(session.to_dict(), f)
+                    f.write('\n')
+                f.flush()
+                os.fsync(f.fileno())  # Ensure data is on disk
+
+            # Atomic rename (overwrites existing file)
+            shutil.move(temp_path, str(self._archive_path))
+
+        except Exception:
+            # Clean up temp file on failure
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
 
     def save_session(self, session: SessionRecord) -> None:
         """Save a session record to the archive.
+
+        Uses atomic write with file locking for thread safety.
 
         Args:
             session: The session record to save
@@ -38,10 +124,23 @@ class ConversationStore:
         if session.ended_at is None:
             session.ended_at = datetime.now()
 
-        # Append to JSONL file
-        with open(self._archive_path, "a", encoding="utf-8") as f:
-            json.dump(session.to_dict(), f)
-            f.write("\n")
+        with self._file_lock():
+            # Load existing sessions
+            existing = list(self._iter_sessions_unlocked())
+
+            # Update or append
+            found = False
+            for i, s in enumerate(existing):
+                if s.session_id == session.session_id:
+                    existing[i] = session
+                    found = True
+                    break
+
+            if not found:
+                existing.append(session)
+
+            # Atomic write
+            self._atomic_write(existing)
 
     def get_session(self, session_id: str) -> Optional[SessionRecord]:
         """Get a specific session by ID.
@@ -57,11 +156,16 @@ class ConversationStore:
                 return session
         return None
 
-    def get_recent_sessions(self, limit: int = 10) -> List[SessionRecord]:
-        """Get the most recent sessions.
+    def get_recent_sessions(
+        self,
+        limit: int = 10,
+        offset: int = 0
+    ) -> List[SessionRecord]:
+        """Get the most recent sessions with pagination.
 
         Args:
             limit: Maximum number of sessions to return
+            offset: Number of sessions to skip
 
         Returns:
             List of recent sessions, newest first
@@ -69,7 +173,7 @@ class ConversationStore:
         sessions = list(self._iter_sessions())
         # Sort by started_at descending
         sessions.sort(key=lambda s: s.started_at, reverse=True)
-        return sessions[:limit]
+        return sessions[offset:offset + limit]
 
     def search_sessions(
         self,
@@ -138,8 +242,7 @@ class ConversationStore:
     def delete_session(self, session_id: str) -> bool:
         """Delete a session from the archive.
 
-        Note: This rewrites the entire file, which is expensive.
-        Use sparingly.
+        Uses atomic write for crash safety.
 
         Args:
             session_id: The session ID to delete
@@ -147,25 +250,38 @@ class ConversationStore:
         Returns:
             True if deleted, False if not found
         """
-        sessions = [
-            s for s in self._iter_sessions()
-            if s.session_id != session_id
-        ]
+        with self._file_lock():
+            sessions = list(self._iter_sessions_unlocked())
+            original_count = len(sessions)
 
-        if len(sessions) == len(list(self._iter_sessions())):
-            return False
+            sessions = [s for s in sessions if s.session_id != session_id]
 
-        # Rewrite file without deleted session
-        self._rewrite_sessions(sessions)
-        return True
+            if len(sessions) == original_count:
+                return False
+
+            # Atomic write
+            self._atomic_write(sessions)
+            return True
 
     def clear(self) -> None:
         """Clear all session records."""
-        if self._archive_path.exists():
-            self._archive_path.unlink()
+        with self._file_lock():
+            if self._archive_path.exists():
+                self._archive_path.unlink()
 
     def _iter_sessions(self) -> Iterator[SessionRecord]:
-        """Iterate over all stored sessions.
+        """Iterate over all stored sessions (with locking).
+
+        Yields:
+            SessionRecord objects
+        """
+        with self._file_lock():
+            yield from self._iter_sessions_unlocked()
+
+    def _iter_sessions_unlocked(self) -> Iterator[SessionRecord]:
+        """Iterate over sessions without acquiring lock.
+
+        Use only when lock is already held.
 
         Yields:
             SessionRecord objects
@@ -174,7 +290,7 @@ class ConversationStore:
             return
 
         with open(self._archive_path, "r", encoding="utf-8") as f:
-            for line in f:
+            for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if not line:
                     continue
@@ -182,7 +298,12 @@ class ConversationStore:
                 try:
                     data = json.loads(line)
                     yield self._dict_to_session(data)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    # Log but don't crash on malformed lines
+                    print(f"Warning: Skipping malformed line {line_num}: {e}")
+                    continue
+                except KeyError as e:
+                    print(f"Warning: Missing field in line {line_num}: {e}")
                     continue
 
     def _dict_to_session(self, data: dict) -> SessionRecord:
@@ -227,13 +348,18 @@ class ConversationStore:
             if s.fork_source_session_id == session_id
         ]
 
-    def _rewrite_sessions(self, sessions: List[SessionRecord]) -> None:
-        """Rewrite the archive file with given sessions.
+    def validate_fork_references(self) -> List[str]:
+        """Validate all fork references point to existing sessions.
 
-        Args:
-            sessions: Sessions to write
+        Returns:
+            List of session IDs with invalid fork references
         """
-        with open(self._archive_path, "w", encoding="utf-8") as f:
-            for session in sessions:
-                json.dump(session.to_dict(), f)
-                f.write("\n")
+        all_ids = {s.session_id for s in self._iter_sessions()}
+        invalid = []
+
+        for session in self._iter_sessions():
+            if session.fork_source_session_id:
+                if session.fork_source_session_id not in all_ids:
+                    invalid.append(session.session_id)
+
+        return invalid
