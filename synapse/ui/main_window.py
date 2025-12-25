@@ -1145,31 +1145,34 @@ class MainWindow(QMainWindow):
     async def _index_document(self, file_path: str) -> None:
         """Index a document for RAG.
 
+        Uses indexing lock to prevent concurrent FAISS operations.
+
         Args:
             file_path: Path to the document file
         """
         if not self._document_indexer:
             return
 
-        try:
-            self.status_bar.showMessage(f"Indexing {Path(file_path).name}...")
+        async with self._indexing_lock:
+            try:
+                self.status_bar.showMessage(f"Indexing {Path(file_path).name}...")
 
-            parent = await self._document_indexer.index_document(Path(file_path))
+                parent = await self._document_indexer.index_document(Path(file_path))
 
-            # Add to sidebar
-            self.sidebar.add_document(
-                doc_id=parent.doc_id,
-                name=parent.title,
-                path=file_path
-            )
+                # Add to sidebar
+                self.sidebar.add_document(
+                    doc_id=parent.doc_id,
+                    name=parent.title,
+                    path=file_path
+                )
 
-            self.status_bar.showMessage(
-                f"Indexed {parent.title} ({len(parent.chunk_ids)} chunks)", 3000
-            )
+                self.status_bar.showMessage(
+                    f"Indexed {parent.title} ({len(parent.chunk_ids)} chunks)", 3000
+                )
 
-        except Exception as e:
-            self.chat_panel.add_error_message(f"Failed to index document: {e}")
-            self.status_bar.showMessage(f"Index failed: {e}", 5000)
+            except Exception as e:
+                self.chat_panel.add_error_message(f"Failed to index document: {e}")
+                self.status_bar.showMessage(f"Index failed: {e}", 5000)
 
     def _on_document_removed(self, doc_id: str) -> None:
         """Handle document removed signal.
@@ -1322,6 +1325,8 @@ class MainWindow(QMainWindow):
     async def _perform_rag_retrieval(self, query: str) -> List[Dict[str, Any]]:
         """Perform hybrid RAG retrieval for a query.
 
+        Uses indexing lock to prevent conflicts with document indexing.
+
         Args:
             query: The user's query
 
@@ -1334,67 +1339,68 @@ class MainWindow(QMainWindow):
         if not self._vector_store or not self._bm25_client:
             return []
 
-        try:
-            # Get query embedding
-            query_embedding = await self._document_indexer.get_query_embedding(query)
+        async with self._indexing_lock:
+            try:
+                # Get query embedding
+                query_embedding = await self._document_indexer.get_query_embedding(query)
 
-            # Vector search
-            vector_results = self._vector_store.query(query_embedding, k=10)
+                # Vector search
+                vector_results = self._vector_store.query(query_embedding, k=10)
 
-            # BM25 search
-            bm25_results = self._bm25_client.query(query, k=10)
+                # BM25 search
+                bm25_results = self._bm25_client.query(query, k=10)
 
-            # Reciprocal rank fusion
-            chunks_dict = {c.chunk.chunk_id: c.chunk for c in vector_results}
-            for r in bm25_results:
-                chunk = self._bm25_client.get_chunk(r.chunk_id)
-                if chunk:
-                    chunks_dict[r.chunk_id] = chunk
+                # Reciprocal rank fusion
+                chunks_dict = {c.chunk.chunk_id: c.chunk for c in vector_results}
+                for r in bm25_results:
+                    chunk = self._bm25_client.get_chunk(r.chunk_id)
+                    if chunk:
+                        chunks_dict[r.chunk_id] = chunk
 
-            fused = reciprocal_rank_fusion(
-                vector_results, bm25_results, chunks_dict, k=60
-            )
-
-            # Apply blacklist filter
-            results = []
-            for chunk_id, score in fused[:5]:  # Top 5
-                # Find the vector result for this chunk
-                vector_result = next(
-                    (r for r in vector_results if r.chunk.chunk_id == chunk_id),
-                    None
+                fused = reciprocal_rank_fusion(
+                    vector_results, bm25_results, chunks_dict, k=60
                 )
 
-                if vector_result:
-                    # Check blacklist
-                    filtered = self._retrieval_blacklist.filter_results([vector_result])
-                    if filtered:
-                        result = filtered[0]
-                        results.append({
-                            "chunk_id": result.chunk.chunk_id,
-                            "content": result.chunk.content,
-                            "source_file": result.chunk.source_file,
-                            "page_or_section": result.chunk.page_or_section,
-                            "similarity_score": result.similarity_score,
-                            "combined_score": score,
-                        })
-                else:
-                    # Chunk only from BM25, get it directly
-                    chunk = self._bm25_client.get_chunk(chunk_id)
-                    if chunk:
-                        results.append({
-                            "chunk_id": chunk.chunk_id,
-                            "content": chunk.content,
-                            "source_file": chunk.source_file,
-                            "page_or_section": chunk.page_or_section,
-                            "similarity_score": 0.0,
-                            "combined_score": score,
-                        })
+                # Apply blacklist filter
+                results = []
+                for chunk_id, score in fused[:5]:  # Top 5
+                    # Find the vector result for this chunk
+                    vector_result = next(
+                        (r for r in vector_results if r.chunk.chunk_id == chunk_id),
+                        None
+                    )
 
-            return results
+                    if vector_result:
+                        # Check blacklist
+                        filtered = self._retrieval_blacklist.filter_results([vector_result])
+                        if filtered:
+                            result = filtered[0]
+                            results.append({
+                                "chunk_id": result.chunk.chunk_id,
+                                "content": result.chunk.content,
+                                "source_file": result.chunk.source_file,
+                                "page_or_section": result.chunk.page_or_section,
+                                "similarity_score": result.similarity_score,
+                                "combined_score": score,
+                            })
+                    else:
+                        # Chunk only from BM25, get it directly
+                        chunk = self._bm25_client.get_chunk(chunk_id)
+                        if chunk:
+                            results.append({
+                                "chunk_id": chunk.chunk_id,
+                                "content": chunk.content,
+                                "source_file": chunk.source_file,
+                                "page_or_section": chunk.page_or_section,
+                                "similarity_score": 0.0,
+                                "combined_score": score,
+                            })
 
-        except Exception as e:
-            self.status_bar.showMessage(f"Retrieval error: {e}", 3000)
-            return []
+                return results
+
+            except Exception as e:
+                self.status_bar.showMessage(f"Retrieval error: {e}", 3000)
+                return []
 
     def _update_inspector(self) -> None:
         """Update the inspector panel with current state."""
@@ -1560,6 +1566,8 @@ class MainWindow(QMainWindow):
     ) -> None:
         """Generate artifacts before exiting.
 
+        Uses QEventLoop for safe blocking in Qt context.
+
         Args:
             outline: Whether to generate conversation outline
             decisions: Whether to generate decision log
@@ -1581,44 +1589,67 @@ class MainWindow(QMainWindow):
                 "content": msg.content,
             })
 
-        # Run artifact generation synchronously (blocking)
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            result = loop.run_until_complete(
-                self._artifact_generator.generate_artifacts(
+        # Use QEventLoop for Qt-safe blocking
+        from PySide6.QtCore import QEventLoop
+
+        loop = QEventLoop()
+        result_holder = {"result": None, "error": None}
+
+        async def generate():
+            try:
+                result_holder["result"] = await self._artifact_generator.generate_artifacts(
                     messages=messages,
                     adapter=self._adapter,
                     generate_outline=outline,
                     generate_decisions=decisions,
                     generate_research=research,
                 )
+            except Exception as e:
+                result_holder["error"] = str(e)
+            finally:
+                loop.quit()
+
+        # Schedule the async task
+        task = asyncio.create_task(generate())
+
+        # Run Qt event loop until task completes (with timeout)
+        QTimer.singleShot(30000, loop.quit)  # 30 second timeout
+        loop.exec()
+
+        # Cancel task if still running (timeout)
+        if not task.done():
+            task.cancel()
+            self.status_bar.showMessage("Artifact generation timed out", 3000)
+            return
+
+        if result_holder["error"]:
+            self.status_bar.showMessage(
+                f"Artifact generation error: {result_holder['error']}", 3000
+            )
+            return
+
+        result = result_holder["result"]
+        if result and result.success:
+            # Save artifacts
+            saved = self._artifact_generator.save_artifacts(
+                result,
+                self._session_record.session_id,
+                settings.artifacts_dir,
             )
 
-            if result.success:
-                # Save artifacts
-                saved = self._artifact_generator.save_artifacts(
-                    result,
-                    self._session_record.session_id,
-                    settings.artifacts_dir,
-                )
+            # Update session record
+            for path in saved:
+                artifact_type = path.stem.split("_")[-1]
+                if artifact_type not in self._session_record.artifacts_generated:
+                    self._session_record.artifacts_generated.append(artifact_type)
 
-                # Update session record
-                for path in saved:
-                    artifact_type = path.stem.split("_")[-1]
-                    if artifact_type not in self._session_record.artifacts_generated:
-                        self._session_record.artifacts_generated.append(artifact_type)
-
-                self.status_bar.showMessage(
-                    f"Saved {len(saved)} artifact(s)", 2000
-                )
-            else:
-                self.status_bar.showMessage(
-                    f"Artifact generation failed: {result.error}", 3000
-                )
-
-        except Exception as e:
-            self.status_bar.showMessage(f"Artifact generation error: {e}", 3000)
+            self.status_bar.showMessage(
+                f"Saved {len(saved)} artifact(s)", 2000
+            )
+        elif result:
+            self.status_bar.showMessage(
+                f"Artifact generation failed: {result.error}", 3000
+            )
 
     def _on_toggle_inspector(self) -> None:
         """Toggle inspector panel visibility."""
