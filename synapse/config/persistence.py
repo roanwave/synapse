@@ -44,6 +44,10 @@ class UserPreferences:
     # Keyboard shortcuts reminder shown
     shortcuts_shown: bool = False
 
+    # Crucible integration settings
+    crucible_enabled: bool = False
+    crucible_router: str = "Auto"  # "Auto", "Custom-Role", or "Custom-Cost"
+
 
 class PersistenceManager:
     """Manages saving and loading user preferences."""
@@ -176,6 +180,22 @@ class PersistenceManager:
         prefs.generate_research = research
         self.save()
 
+    def update_crucible_settings(
+        self,
+        enabled: bool,
+        router: str,
+    ) -> None:
+        """Update Crucible integration settings and save.
+
+        Args:
+            enabled: Whether Crucible is enabled
+            router: Router mode ("Auto", "Custom-Role", or "Custom-Cost")
+        """
+        prefs = self.preferences
+        prefs.crucible_enabled = enabled
+        prefs.crucible_router = router
+        self.save()
+
     def _preferences_to_dict(self, prefs: UserPreferences) -> Dict[str, Any]:
         """Convert preferences to dictionary.
 
@@ -200,6 +220,8 @@ class PersistenceManager:
             "generate_decisions": prefs.generate_decisions,
             "generate_research": prefs.generate_research,
             "shortcuts_shown": prefs.shortcuts_shown,
+            "crucible_enabled": prefs.crucible_enabled,
+            "crucible_router": prefs.crucible_router,
         }
 
     def _dict_to_preferences(self, data: Dict[str, Any]) -> UserPreferences:
@@ -229,6 +251,8 @@ class PersistenceManager:
             generate_decisions=data.get("generate_decisions", True),
             generate_research=data.get("generate_research", False),
             shortcuts_shown=data.get("shortcuts_shown", False),
+            crucible_enabled=data.get("crucible_enabled", False),
+            crucible_router=data.get("crucible_router", "Auto"),
         )
 
 

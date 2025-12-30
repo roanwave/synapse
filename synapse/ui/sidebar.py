@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QFileDialog,
     QMenu,
+    QCheckBox,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -541,6 +543,228 @@ class DocumentPanel(QFrame):
         self.doc_list.clear()
 
 
+class CruciblePanel(QFrame):
+    """Premium Crucible control panel for multi-LLM deliberation."""
+
+    crucible_toggled = Signal(bool)  # Emits enabled state
+    router_changed = Signal(str)  # Emits router mode
+
+    def __init__(self, parent: QWidget | None = None):
+        """Initialize the Crucible panel.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """Set up the premium Crucible panel UI."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(
+            metrics.padding_large,
+            metrics.padding_large,
+            metrics.padding_large,
+            metrics.padding_large,
+        )
+        layout.setSpacing(metrics.padding_small)
+
+        # Section label
+        label = QLabel("CRUCIBLE")
+        label.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_muted};
+                font-size: {metrics.font_small}px;
+                font-weight: 600;
+                font-family: {fonts.ui};
+                letter-spacing: 1px;
+                background: transparent;
+            }}
+        """)
+        layout.addWidget(label)
+
+        # Enable toggle checkbox
+        self.enable_toggle = QCheckBox("Enable Crucible")
+        self.enable_toggle.setStyleSheet(f"""
+            QCheckBox {{
+                color: {theme.text_primary};
+                font-size: {metrics.font_normal}px;
+                font-family: {fonts.ui};
+                spacing: {metrics.padding_small}px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border-radius: {metrics.radius_small}px;
+                border: 1px solid {theme.border};
+                background-color: {theme.background};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {theme.accent};
+                border-color: {theme.accent};
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: {theme.accent};
+            }}
+        """)
+        self.enable_toggle.stateChanged.connect(self._on_toggle_changed)
+        layout.addWidget(self.enable_toggle)
+
+        # Router mode row
+        router_row = QHBoxLayout()
+        router_row.setSpacing(metrics.padding_small)
+
+        router_label = QLabel("Router:")
+        router_label.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.text_secondary};
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.ui};
+                background: transparent;
+            }}
+        """)
+        router_row.addWidget(router_label)
+
+        self.router_dropdown = QComboBox()
+        self.router_dropdown.addItems(["Auto", "Custom-Role", "Custom-Cost"])
+        self.router_dropdown.setCurrentText("Auto")
+        self.router_dropdown.setEnabled(False)
+        self.router_dropdown.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {theme.background_elevated};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                border-radius: {metrics.radius_small}px;
+                padding: {metrics.padding_small}px;
+                min-height: 20px;
+                font-family: {fonts.ui};
+                font-size: {metrics.font_small}px;
+            }}
+            QComboBox:hover {{
+                border-color: {theme.accent};
+            }}
+            QComboBox:disabled {{
+                color: {theme.text_disabled};
+                background-color: {theme.background};
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 20px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid {theme.text_muted};
+                margin-right: {metrics.padding_small}px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {theme.background_elevated};
+                color: {theme.text_primary};
+                border: 1px solid {theme.border};
+                selection-background-color: {theme.accent};
+            }}
+        """)
+        self.router_dropdown.currentTextChanged.connect(self._on_router_changed)
+        router_row.addWidget(self.router_dropdown, stretch=1)
+
+        layout.addLayout(router_row)
+
+        # Warning label (hidden by default)
+        self.warning_label = QLabel("Model selection disabled")
+        self.warning_label.setStyleSheet(f"""
+            QLabel {{
+                color: {theme.budget_orange};
+                font-size: {metrics.font_small}px;
+                font-family: {fonts.ui};
+                background: transparent;
+            }}
+        """)
+        self.warning_label.setVisible(False)
+        layout.addWidget(self.warning_label)
+
+        # Premium frame styling
+        self.setStyleSheet(f"""
+            CruciblePanel {{
+                background-color: {theme.background_elevated};
+                border-radius: {metrics.radius_large}px;
+                border: 1px solid {theme.border_subtle};
+            }}
+        """)
+
+    def _on_toggle_changed(self, state: int) -> None:
+        """Handle toggle state change.
+
+        Args:
+            state: Qt check state
+        """
+        import os
+
+        enabled = state == Qt.CheckState.Checked.value
+
+        if enabled:
+            # Check for OPENROUTER_KEY
+            if not os.environ.get("OPENROUTER_KEY"):
+                QMessageBox.warning(
+                    self,
+                    "OpenRouter Key Required",
+                    "OPENROUTER_KEY environment variable not set.\n\n"
+                    "Crucible requires an OpenRouter API key to function.\n"
+                    "Please set the OPENROUTER_KEY environment variable and restart Synapse.",
+                )
+                self.enable_toggle.setChecked(False)
+                return
+
+        # Update UI state
+        self.router_dropdown.setEnabled(enabled)
+        self.warning_label.setVisible(enabled)
+
+        # Emit signal
+        self.crucible_toggled.emit(enabled)
+
+    def _on_router_changed(self, router_mode: str) -> None:
+        """Handle router mode change.
+
+        Args:
+            router_mode: Selected router mode
+        """
+        self.router_changed.emit(router_mode)
+
+    def set_enabled(self, enabled: bool) -> None:
+        """Set the enabled state of the toggle.
+
+        Args:
+            enabled: Whether Crucible is enabled
+        """
+        self.enable_toggle.setChecked(enabled)
+        self.router_dropdown.setEnabled(enabled)
+        self.warning_label.setVisible(enabled)
+
+    def set_router(self, router_mode: str) -> None:
+        """Set the router mode.
+
+        Args:
+            router_mode: Router mode to select
+        """
+        self.router_dropdown.setCurrentText(router_mode)
+
+    def get_enabled(self) -> bool:
+        """Get whether Crucible is enabled.
+
+        Returns:
+            True if enabled
+        """
+        return self.enable_toggle.isChecked()
+
+    def get_router(self) -> str:
+        """Get the current router mode.
+
+        Returns:
+            Current router mode string
+        """
+        return self.router_dropdown.currentText()
+
+
 class Sidebar(QWidget):
     """Premium sidebar panel with model selector, context indicator, and document panel."""
 
@@ -551,6 +775,8 @@ class Sidebar(QWidget):
     documents_cleared = Signal()  # Emits when all documents cleared
     inspector_toggled = Signal(bool)  # Emits visibility state
     jump_to_message = Signal(int)  # Emits message_index for TOC navigation
+    crucible_toggled = Signal(bool)  # Emits Crucible enabled state
+    crucible_router_changed = Signal(str)  # Emits Crucible router mode
 
     def __init__(self, parent: QWidget | None = None):
         """Initialize the sidebar.
@@ -587,6 +813,12 @@ class Sidebar(QWidget):
         self.document_panel.document_removed.connect(self.document_removed)
         self.document_panel.documents_cleared.connect(self.documents_cleared)
         layout.addWidget(self.document_panel)
+
+        # Crucible panel
+        self.crucible_panel = CruciblePanel()
+        self.crucible_panel.crucible_toggled.connect(self._on_crucible_toggled)
+        self.crucible_panel.router_changed.connect(self.crucible_router_changed)
+        layout.addWidget(self.crucible_panel)
 
         # Table of Contents panel
         self.toc_panel = TOCPanel()
@@ -770,3 +1002,49 @@ class Sidebar(QWidget):
     def clear_toc(self) -> None:
         """Clear the TOC panel."""
         self.toc_panel.clear()
+
+    def _on_crucible_toggled(self, enabled: bool) -> None:
+        """Handle Crucible toggle state change.
+
+        Disables model selector when Crucible is active.
+
+        Args:
+            enabled: Whether Crucible is enabled
+        """
+        # Disable model selector when Crucible is active
+        self.model_selector.setEnabled(not enabled)
+        # Emit signal for main window
+        self.crucible_toggled.emit(enabled)
+
+    def set_crucible_enabled(self, enabled: bool) -> None:
+        """Set the Crucible enabled state.
+
+        Args:
+            enabled: Whether Crucible is enabled
+        """
+        self.crucible_panel.set_enabled(enabled)
+        self.model_selector.setEnabled(not enabled)
+
+    def set_crucible_router(self, router_mode: str) -> None:
+        """Set the Crucible router mode.
+
+        Args:
+            router_mode: Router mode ("Auto", "Custom-Role", or "Custom-Cost")
+        """
+        self.crucible_panel.set_router(router_mode)
+
+    def get_crucible_enabled(self) -> bool:
+        """Get whether Crucible is enabled.
+
+        Returns:
+            True if enabled
+        """
+        return self.crucible_panel.get_enabled()
+
+    def get_crucible_router(self) -> str:
+        """Get the current Crucible router mode.
+
+        Returns:
+            Router mode string
+        """
+        return self.crucible_panel.get_router()

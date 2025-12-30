@@ -123,9 +123,15 @@ class MainWindow(QMainWindow):
         self._conversation_indexer: Optional[ConversationIndexer] = None
         self._search_dialog: Optional[ConversationSearchDialog] = None
 
+        # Crucible integration
+        self._crucible_enabled = False
+        self._crucible_router = "Auto"
+        self._crucible_adapter = None  # Lazy initialization
+
         self._setup_ui()
         self._setup_shortcuts()
         self._setup_default_model()
+        self._setup_crucible_state()
 
     def _setup_ui(self) -> None:
         """Set up the main window UI."""
@@ -167,6 +173,8 @@ class MainWindow(QMainWindow):
         self.sidebar.documents_cleared.connect(self._on_documents_cleared)
         self.sidebar.inspector_toggled.connect(self._on_inspector_toggled)
         self.sidebar.jump_to_message.connect(self._on_jump_to_message)
+        self.sidebar.crucible_toggled.connect(self._on_crucible_toggled)
+        self.sidebar.crucible_router_changed.connect(self._on_crucible_router_changed)
         main_layout.addWidget(self.sidebar)
 
         # Chat area
@@ -810,8 +818,12 @@ class MainWindow(QMainWindow):
         self.sidebar.set_regenerate_enabled(False)
         assistant_msg_index = self.chat_panel.start_assistant_message()
 
-        # Await the streaming response with RAG
-        await self._stream_response_with_rag(message, assistant_msg_index)
+        # Route through Crucible or standard LLM
+        if self._crucible_enabled and self._crucible_adapter:
+            await self._stream_crucible_response(message, assistant_msg_index)
+        else:
+            # Await the streaming response with RAG
+            await self._stream_response_with_rag(message, assistant_msg_index)
 
     async def _stream_response_with_rag(
         self,
@@ -943,7 +955,10 @@ class MainWindow(QMainWindow):
 
     def _on_regenerate_requested(self) -> None:
         """Handle regenerate request."""
-        if self._is_streaming or not self._adapter:
+        # Allow regenerate if we have an adapter OR Crucible is enabled
+        if self._is_streaming:
+            return
+        if not self._adapter and not (self._crucible_enabled and self._crucible_adapter):
             return
 
         # Get last user message before removing
@@ -966,12 +981,18 @@ class MainWindow(QMainWindow):
         self._is_streaming = True
         self.input_panel.set_enabled(False)
         self.sidebar.set_regenerate_enabled(False)
-        self.chat_panel.start_assistant_message()
+        assistant_msg_index = self.chat_panel.start_assistant_message()
 
         self.status_bar.showMessage("Regenerating response...", 2000)
 
-        # Run the async stream
-        self._create_task(self._stream_response(), name="regenerate_stream")
+        # Route through Crucible or standard LLM
+        if self._crucible_enabled and self._crucible_adapter:
+            self._create_task(
+                self._stream_crucible_response(last_user, assistant_msg_index),
+                name="regenerate_crucible"
+            )
+        else:
+            self._create_task(self._stream_response(), name="regenerate_stream")
 
     def _on_set_waypoint(self) -> None:
         """Handle waypoint set request."""
@@ -2211,3 +2232,122 @@ class MainWindow(QMainWindow):
             )
         else:
             self.status_bar.showMessage("Nothing to rollback", 2000)
+
+    # ==================== Crucible Integration ====================
+
+    def _setup_crucible_state(self) -> None:
+        """Load Crucible settings from persistence and update UI."""
+        prefs = persistence.preferences
+        self._crucible_enabled = prefs.crucible_enabled
+        self._crucible_router = prefs.crucible_router
+
+        # Update sidebar UI
+        self.sidebar.set_crucible_enabled(self._crucible_enabled)
+        self.sidebar.set_crucible_router(self._crucible_router)
+
+    def _on_crucible_toggled(self, enabled: bool) -> None:
+        """Handle Crucible toggle state change.
+
+        Args:
+            enabled: Whether Crucible is enabled
+        """
+        self._crucible_enabled = enabled
+
+        # Initialize Crucible adapter lazily if needed
+        if enabled and self._crucible_adapter is None:
+            try:
+                from ..orchestrator.crucible_adapter import CrucibleAdapter
+
+                self._crucible_adapter = CrucibleAdapter()
+            except ImportError as e:
+                self.status_bar.showMessage(
+                    "Crucible not installed. Install with: pip install -e C:\\Users\\erick\\projects\\Crucible",
+                    5000,
+                )
+                self._crucible_enabled = False
+                self.sidebar.set_crucible_enabled(False)
+                return
+            except ValueError as e:
+                self.status_bar.showMessage(str(e), 5000)
+                self._crucible_enabled = False
+                self.sidebar.set_crucible_enabled(False)
+                return
+
+        # Update status bar
+        if enabled:
+            self.status_bar.showMessage(
+                f"Crucible enabled with {self._crucible_router} router", 3000
+            )
+            self.model_label.setText("Model: Crucible Council")
+        else:
+            self.status_bar.showMessage("Crucible disabled", 2000)
+            # Restore model label
+            model_config = get_model(self._current_model_id)
+            if model_config:
+                self.model_label.setText(f"Model: {model_config.display_name}")
+
+        # Save preference
+        persistence.update_crucible_settings(enabled, self._crucible_router)
+
+    def _on_crucible_router_changed(self, router_mode: str) -> None:
+        """Handle Crucible router mode change.
+
+        Args:
+            router_mode: Selected router mode
+        """
+        self._crucible_router = router_mode
+
+        if self._crucible_enabled:
+            self.status_bar.showMessage(f"Crucible router: {router_mode}", 2000)
+
+        # Save preference
+        persistence.update_crucible_settings(self._crucible_enabled, router_mode)
+
+    async def _stream_crucible_response(self, user_message: str, assistant_msg_index: int = -1) -> None:
+        """Stream a response through Crucible deliberation.
+
+        Args:
+            user_message: The user's message for Crucible query
+            assistant_msg_index: Index of the assistant message for TOC
+        """
+        if not self._crucible_adapter:
+            self.chat_panel.add_error_message("Crucible adapter not initialized")
+            return
+
+        try:
+            self.status_bar.showMessage("Crucible deliberating...", 0)
+
+            # Run Crucible deliberation
+            response = await self._crucible_adapter.run(user_message, self._crucible_router)
+
+            # Display the response (Crucible doesn't stream, so we display all at once)
+            self.chat_panel.append_to_assistant_message(response)
+            self.chat_panel.finish_assistant_message()
+
+            # Add to history
+            self._prompt_builder.add_assistant_message(response)
+
+            # Analyze completed response for TOC entry
+            if assistant_msg_index >= 0:
+                toc_entry = self._toc_generator.analyze_message(
+                    response, "assistant", assistant_msg_index
+                )
+                if toc_entry:
+                    self.sidebar.add_toc_entry(toc_entry)
+                self.sidebar.set_toc_current_index(assistant_msg_index)
+
+            self.status_bar.showMessage("Crucible response complete", 3000)
+
+        except Exception as e:
+            error_msg = str(e)
+            self.chat_panel.add_error_message(f"Crucible error: {error_msg}")
+            self.status_bar.showMessage(f"Crucible error: {error_msg}", 5000)
+
+        finally:
+            self._is_streaming = False
+            self.input_panel.set_enabled(True)
+            self.sidebar.set_regenerate_enabled(
+                self._prompt_builder.get_message_count() > 0
+            )
+            self.input_panel.focus_input()
+            self._update_token_count()
